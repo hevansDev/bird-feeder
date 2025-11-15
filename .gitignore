@@ -1,4 +1,32 @@
-.venv
-.vscode
-screenlog.0
-.DS_store
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Local images - don't commit bird photos!
+bird-feeder/images/*.jpg
+bird-feeder/images/*.jpeg
+bird-feeder/images/*.png
+bird-feeder/!images/.gitkeep
+
+# Secrets and local config
+.env.local
+*.local.toml
+.dev.vars
+
+# Cloudflare
+cloudflare-worker/node_modules/
+cloudflare-worker/.wrangler/
+cloudflare-worker/dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

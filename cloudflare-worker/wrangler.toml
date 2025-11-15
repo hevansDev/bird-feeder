@@ -1,0 +1,7 @@
+name = "bird-upload-api"
+main = "worker.js"
+compatibility_date = "2024-11-15"
+
+[vars]
+RATE_LIMIT_PER_HOUR = 100
+MAX_FILE_SIZE_MB = 10

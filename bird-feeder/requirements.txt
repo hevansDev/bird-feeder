@@ -1,0 +1,7 @@
+opencv-python-headless==4.8.1.78
+#RPi.GPIO==0.7.1
+
+opencv-python
+numpy
+python-dotenv
+requests

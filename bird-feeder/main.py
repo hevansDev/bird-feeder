@@ -1,22 +1,48 @@
 import cv2
 import sys
 import time
+import json
 import numpy as np
-# import RPi.GPIO as GPIO
-# from hx711 import HX711
+import requests
 from datetime import datetime
 import os
+from dotenv import load_dotenv
+from pathlib import Path
 
-MOTION_ENABLED = True
-MOTION_THRESHOLD = 1000
-FRAMES_BEFORE_DEPARTURE = 10  # Increased for stability
+# Load environment variables - try .env.local first, fall back to .env
+if os.path.exists('.env.local'):
+    load_dotenv('.env.local', override=True)
+else:
+    load_dotenv('.env')
 
-SCALE_ENABLED = False
-WEIGHT_THRESHOLD = 5
+# Configuration from .env
+MOTION_ENABLED = os.getenv('MOTION_ENABLED', 'true').lower() == 'true'
+MOTION_THRESHOLD = int(os.getenv('MOTION_THRESHOLD', '1000'))
+FRAMES_BEFORE_DEPARTURE = int(os.getenv('FRAMES_BEFORE_DEPARTURE', '10'))
 
-# New constants
-SCALE_WAIT_TIME = 1.0  # Seconds to wait for scale reading after motion
-PHOTO_COOLDOWN = 5.0   # Minimum seconds between photos of same bird
+SCALE_ENABLED = os.getenv('SCALE_ENABLED', 'false').lower() == 'true'
+WEIGHT_THRESHOLD = int(os.getenv('WEIGHT_THRESHOLD', '5'))
+SCALE_WAIT_TIME = float(os.getenv('SCALE_WAIT_TIME', '1.0'))
+SCALE_REFERENCE_UNIT = float(os.getenv('SCALE_REFERENCE_UNIT', '-388.929792'))
+
+# Cloud upload config
+ENABLE_CLOUD_UPLOAD = os.getenv('ENABLE_CLOUD_UPLOAD', 'false').lower() == 'true'
+UPLOAD_SERVICE_URL = os.getenv('UPLOAD_SERVICE_URL', '')
+USER_ID = os.getenv('USER_ID', 'anonymous')
+FEEDER_LOCATION = os.getenv('FEEDER_LOCATION', '')
+
+# File paths
+IMAGES_DIR = os.getenv('IMAGES_DIR', './images')
+PHOTO_COOLDOWN = float(os.getenv('PHOTO_COOLDOWN', '5.0'))
+
+# Import scale library only if needed
+if SCALE_ENABLED:
+    try:
+        import RPi.GPIO as GPIO
+        from hx711 import HX711
+    except ImportError:
+        print("Warning: Scale enabled but RPi.GPIO/HX711 not available")
+        SCALE_ENABLED = False
 
 class BirdFeeder:
     def __init__(self):
@@ -26,7 +52,7 @@ class BirdFeeder:
         self.approach_time = None
         self.last_photo_time = None
         
-        os.makedirs("./images", exist_ok=True)
+        Path(IMAGES_DIR).mkdir(exist_ok=True)
         
         print("Initializing camera...")
         self.cap = cv2.VideoCapture(0)
@@ -37,7 +63,7 @@ class BirdFeeder:
             print("Initializing scale...")
             self.hx = HX711(5, 6)
             self.hx.set_reading_format("MSB", "MSB")
-            self.hx.set_reference_unit(-388.929792)
+            self.hx.set_reference_unit(SCALE_REFERENCE_UNIT)
             self.hx.reset()
             self.hx.tare()
             print("Scale tared! Waiting for birds...")
@@ -62,7 +88,7 @@ class BirdFeeder:
                 if not self.bird_approaching:
                     self.bird_approaching = True
                     self.approach_time = current_time
-                    print("👀 Bird approaching...")
+                    print("Bird approaching...")
                 
                 # Wait for scale reading
                 elif current_time - self.approach_time > SCALE_WAIT_TIME:
@@ -178,22 +204,65 @@ class BirdFeeder:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 weight_str = f"{weight:.2f}g" if weight is not None else "None"
                 filename = f"bird_{timestamp}_{weight_str}_{detection_type}.jpg"
-                cv2.imwrite("./images/"+filename, frame)
-                print(f"📸 Photo: {filename}")
+                filepath = Path(IMAGES_DIR) / filename
+    
+                cv2.imwrite(str(filepath), frame)
+
+                if ENABLE_CLOUD_UPLOAD:
+                    self.upload_to_cloud(filepath, filename, weight, detection_type, timestamp)
+                
+                print(f"Photo: {filename}")
                 self.last_photo_time = current_time
                 return True
         return False
+
+    def upload_to_cloud(self, filepath, filename, weight, detection_type, timestamp):
+        """Upload photo to Cloudflare Images"""
+        try:
+            metadata = {
+                'weight': weight,
+                'detectionType': detection_type,
+                'timestamp': timestamp,
+                'location': FEEDER_LOCATION if FEEDER_LOCATION else None,
+                'filename': filename
+            }
+            
+            with open(filepath, 'rb') as f:
+                files = {'file': (filename, f, 'image/jpeg')}
+                data = {
+                    'user_id': USER_ID,
+                    'metadata': json.dumps(metadata)
+                }
+                
+                response = requests.post(
+                    UPLOAD_SERVICE_URL,
+                    files=files,
+                    data=data,
+                    timeout=30
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('success'):
+                    print(f"Uploaded to cloud: {result['urls']['public']}")
+                else:
+                    print(f"Upload failed: {result.get('error')}")
+            else:
+                print(f"Upload failed: HTTP {response.status_code}")
+                
+        except Exception as e:
+            print(f"Cloud upload error: {e}")
 
     def on_bird_landed(self, weight, detection_type):
         """Called when a bird lands. detection_type: 'scale', 'motion', or 'motion-only'"""
         timestamp = datetime.now()
         weight_str = f"{weight:.2f}g" if weight is not None else "N/A"
-        print(f"🐦 Bird landed at {timestamp.isoformat()}! Weight: {weight_str} (detected by: {detection_type})")
+        print(f"Bird landed at {timestamp.isoformat()}! Weight: {weight_str} (detected by: {detection_type})")
         self.take_photo(weight, detection_type)
 
     def on_bird_left(self):
         """Called when a bird leaves the feeder"""
-        print(f"🦅 Bird left!")
+        print("Bird left!")
         if SCALE_ENABLED:
             self.hx.tare()
             print("Scale tared! Waiting for birds...")

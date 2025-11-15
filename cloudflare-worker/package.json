@@ -1,0 +1,13 @@
+{
+  "name": "bird-upload-api",
+  "version": "1.0.0",
+  "description": "Upload API for bird feeder photos",
+  "main": "worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

@@ -1,0 +1,14 @@
+# cloudflare-worker/wrangler.example.toml
+# Copy this to wrangler.local.toml and fill in your values
+name = "bird-upload-api"
+main = "worker.js"
+compatibility_date = "2024-11-15"
+
+[vars]
+CLOUDFLARE_ACCOUNT_ID = "your_account_id_here"
+CLOUDFLARE_ACCOUNT_HASH = "your_account_hash_here"
+RATE_LIMIT_PER_HOUR = 100
+MAX_FILE_SIZE_MB = 10
+
+# To set secrets (never commit these!):
+# npx wrangler secret put IMAGES_API_TOKEN
