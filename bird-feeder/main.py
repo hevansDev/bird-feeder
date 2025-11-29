@@ -9,6 +9,10 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 
+import serial
+import threading
+from queue import Queue
+
 # Load environment variables - try .env.local first, fall back to .env
 if os.path.exists('.env.local'):
     load_dotenv('.env.local', override=True)
@@ -25,6 +29,14 @@ WEIGHT_THRESHOLD = int(os.getenv('WEIGHT_THRESHOLD', '5'))
 SCALE_WAIT_TIME = float(os.getenv('SCALE_WAIT_TIME', '1.0'))
 SCALE_REFERENCE_UNIT = float(os.getenv('SCALE_REFERENCE_UNIT', '-388.929792'))
 
+# Scale type: 'direct' for HX711 connected to Pi GPIO, 'serial' for Pico over USB
+SCALE_TYPE = os.getenv('SCALE_TYPE', 'serial')  # 'direct' or 'serial'
+
+# Serial Pico config
+PICO_SERIAL_PORT = os.getenv('PICO_SERIAL_PORT', '/dev/ttyACM0')
+PICO_SERIAL_BAUD = int(os.getenv('PICO_SERIAL_BAUD', '115200'))
+PICO_TIMEOUT = float(os.getenv('PICO_TIMEOUT', '2.0'))
+
 # Cloud upload config
 ENABLE_CLOUD_UPLOAD = os.getenv('ENABLE_CLOUD_UPLOAD', 'false').lower() == 'true'
 UPLOAD_SERVICE_URL = os.getenv('UPLOAD_SERVICE_URL', '')
@@ -35,14 +47,116 @@ FEEDER_LOCATION = os.getenv('FEEDER_LOCATION', '')
 IMAGES_DIR = os.getenv('IMAGES_DIR', './images')
 PHOTO_COOLDOWN = float(os.getenv('PHOTO_COOLDOWN', '5.0'))
 
-# Import scale library only if needed
-if SCALE_ENABLED:
+# Import scale library only if needed for direct connection
+if SCALE_ENABLED and SCALE_TYPE == 'direct':
     try:
         import RPi.GPIO as GPIO
         from hx711 import HX711
     except ImportError:
         print("Warning: Scale enabled but RPi.GPIO/HX711 not available")
         SCALE_ENABLED = False
+
+class SerialWeightSensor:
+    """Interface for Pico weight sensor over serial USB"""
+    
+    def __init__(self, port, baudrate=115200, timeout=2.0):
+        self.port = port
+        self.baudrate = baudrate
+        self.serial = None
+        self.latest_weight = None
+        self.connected = False
+        self.reader_thread = None
+        self.running = False
+        
+        self.connect()
+    
+    def connect(self):
+        """Connect to Pico serial port"""
+        try:
+            print(f"Connecting to Pico on {self.port}...")
+            self.serial = serial.Serial(self.port, self.baudrate, timeout=1.0)
+            time.sleep(2)  # Wait for Pico to initialize
+            
+            # Clear any startup messages
+            self.serial.reset_input_buffer()
+            
+            # Wait for READY message
+            start_time = time.time()
+            while time.time() - start_time < 5:
+                if self.serial.in_waiting:
+                    line = self.serial.readline().decode('utf-8').strip()
+                    if line == "READY":
+                        print("Pico weight sensor ready!")
+                        self.connected = True
+                        break
+                time.sleep(0.1)
+            
+            if not self.connected:
+                raise RuntimeError("Pico didn't send READY signal")
+            
+            # Start reader thread
+            self.running = True
+            self.reader_thread = threading.Thread(target=self._read_loop, daemon=True)
+            self.reader_thread.start()
+            
+        except Exception as e:
+            print(f"Failed to connect to Pico: {e}")
+            self.connected = False
+            raise
+    
+    def _read_loop(self):
+        """Background thread to continuously read weight from serial"""
+        while self.running:
+            try:
+                if self.serial.in_waiting:
+                    line = self.serial.readline().decode('utf-8').strip()
+                    
+                    if line.startswith("WEIGHT:"):
+                        try:
+                            weight = float(line.split(":")[1])
+                            self.latest_weight = weight
+                        except ValueError:
+                            pass
+                    
+                    elif line.startswith("ERROR:"):
+                        error = line.split(":")[1]
+                        if error != "NO_READING":
+                            print(f"Pico error: {error}")
+                    
+                    elif line == "TARED":
+                        print("Pico: Scale tared successfully")
+                    
+                    elif line == "TARING":
+                        print("Pico: Taring scale...")
+                
+                time.sleep(0.01)
+                
+            except Exception as e:
+                print(f"Serial read error: {e}")
+                time.sleep(0.1)
+    
+    def get_weight(self):
+        """Get latest weight reading"""
+        return self.latest_weight
+    
+    def tare(self):
+        """Send tare command to Pico"""
+        if self.connected and self.serial:
+            try:
+                self.serial.write(b"TARE\n")
+                self.serial.flush()
+                time.sleep(1)
+            except Exception as e:
+                print(f"Failed to send tare command: {e}")
+    
+    def close(self):
+        """Clean shutdown of serial connection"""
+        self.running = False
+        if self.reader_thread:
+            self.reader_thread.join(timeout=1)
+        if self.serial:
+            self.serial.close()
+        print("Serial connection closed")
 
 class BirdFeeder:
     def __init__(self):
@@ -59,14 +173,19 @@ class BirdFeeder:
         if not self.cap.isOpened():
             raise RuntimeError("Failed to open camera!")
 
+        # Initialize scale based on type
         if SCALE_ENABLED:
-            print("Initializing scale...")
-            self.hx = HX711(5, 6)
-            self.hx.set_reading_format("MSB", "MSB")
-            self.hx.set_reference_unit(SCALE_REFERENCE_UNIT)
-            self.hx.reset()
-            self.hx.tare()
-            print("Scale tared! Waiting for birds...")
+            if SCALE_TYPE == 'serial':
+                print("Initializing Pico serial weight sensor...")
+                self.scale = SerialWeightSensor(PICO_SERIAL_PORT, PICO_SERIAL_BAUD, PICO_TIMEOUT)
+            else:  # direct
+                print("Initializing direct HX711 scale...")
+                self.hx = HX711(5, 6)
+                self.hx.set_reading_format("MSB", "MSB")
+                self.hx.set_reference_unit(SCALE_REFERENCE_UNIT)
+                self.hx.reset()
+                self.hx.tare()
+                print("Scale tared! Waiting for birds...")
         
         if MOTION_ENABLED:
             self.prev_frame = None
@@ -140,8 +259,13 @@ class BirdFeeder:
     def cleanAndExit(self):
         print("Cleaning...")
         self.cap.release()
+        
         if SCALE_ENABLED:
-            self.hx.power_down()
+            if SCALE_TYPE == 'serial':
+                self.scale.close()
+            else:
+                self.hx.power_down()
+        
         print("Bye!")
         sys.exit()
 
@@ -149,25 +273,30 @@ class BirdFeeder:
         """Get stable weight reading. Returns float (grams) or None."""
         if not SCALE_ENABLED:
             return None
+        
+        if SCALE_TYPE == 'serial':
+            # Just return latest reading from Pico
+            return self.scale.get_weight()
+        
+        else:  # direct HX711
+            readings = []
+            for i in range(samples):
+                reading = self.hx.get_weight(1)
+                readings.append(reading)
+                time.sleep(0.02)
             
-        readings = []
-        for i in range(samples):
-            reading = self.hx.get_weight(1)
-            readings.append(reading)
-            time.sleep(0.02)
-        
-        readings.sort()
-        outliers_to_remove = max(3, int(samples * 0.4))
-        trimmed = readings[outliers_to_remove:-outliers_to_remove]
-        
-        if len(trimmed) >= 3:
-            median_index = len(trimmed) // 2
-            stable_weight = trimmed[median_index]
-        else:
-            median_index = len(readings) // 2
-            stable_weight = readings[median_index]
-        
-        return stable_weight
+            readings.sort()
+            outliers_to_remove = max(3, int(samples * 0.4))
+            trimmed = readings[outliers_to_remove:-outliers_to_remove]
+            
+            if len(trimmed) >= 3:
+                median_index = len(trimmed) // 2
+                stable_weight = trimmed[median_index]
+            else:
+                median_index = len(readings) // 2
+                stable_weight = readings[median_index]
+            
+            return stable_weight
 
     def detect_motion(self):
         """Detect motion using frame differencing. Returns int (motion pixels)."""
@@ -263,9 +392,13 @@ class BirdFeeder:
     def on_bird_left(self):
         """Called when a bird leaves the feeder"""
         print("Bird left!")
+        
         if SCALE_ENABLED:
-            self.hx.tare()
-            print("Scale tared! Waiting for birds...")
+            if SCALE_TYPE == 'serial':
+                self.scale.tare()
+            else:
+                self.hx.tare()
+                print("Scale tared! Waiting for birds...")
 
 birdFeeder = BirdFeeder()
 
