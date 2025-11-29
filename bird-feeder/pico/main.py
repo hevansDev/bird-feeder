@@ -33,7 +33,6 @@ class WeightSensor:
         self.tare_offset = 0  # Additional tare offset from commands
         
         print("READY")  # Signal to host that we're initialized
-        sys.stdout.flush()
     
     def get_stable_reading(self, samples=5):
         """Get a stable reading by averaging multiple samples with outlier removal"""
@@ -70,7 +69,6 @@ class WeightSensor:
     def tare(self):
         """Tare the scale - set current weight as zero"""
         print("TARING")
-        sys.stdout.flush()
         
         # Take several readings to get stable tare value
         readings = []
@@ -88,8 +86,6 @@ class WeightSensor:
             print("TARED")
         else:
             print("ERROR:TARE_FAILED")
-        
-        sys.stdout.flush()
     
     def check_command(self):
         """Check for serial commands from host (non-blocking)"""
@@ -117,12 +113,10 @@ def main():
             else:
                 print("ERROR:NO_READING")
             
-            sys.stdout.flush()
             time.sleep(READING_INTERVAL)
             
         except Exception as e:
             print(f"ERROR:{e}")
-            sys.stdout.flush()
             time.sleep(1)
 
 if __name__ == "__main__":
@@ -130,4 +124,3 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("SHUTDOWN")
-        sys.stdout.flush()
