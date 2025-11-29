@@ -80,19 +80,20 @@ class SerialWeightSensor:
             # Clear any startup messages
             self.serial.reset_input_buffer()
             
-            # Wait for READY message
+            # Wait for WEIGHT messages (Pico may have already sent READY)
             start_time = time.time()
-            while time.time() - start_time < 5:
+            while time.time() - start_time < 3:
                 if self.serial.in_waiting:
                     line = self.serial.readline().decode('utf-8').strip()
-                    if line == "READY":
+                    print(f"DEBUG: Received from Pico: '{line}'")
+                    if line == "READY" or line.startswith("WEIGHT:"):
                         print("Pico weight sensor ready!")
                         self.connected = True
                         break
                 time.sleep(0.1)
-            
+
             if not self.connected:
-                raise RuntimeError("Pico didn't send READY signal")
+                raise RuntimeError("Pico didn't send any data")
             
             # Start reader thread
             self.running = True
