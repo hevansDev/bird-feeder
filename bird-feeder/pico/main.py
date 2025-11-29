@@ -11,8 +11,8 @@ import sys
 import select
 
 # Your calibration values - UPDATE THESE!
-TARE_VALUE = -719151.70
-CALIBRATION_FACTOR = -415.944840
+TARE_VALUE = 29231.90
+CALIBRATION_FACTOR = -172.367900
 
 # Pin configuration
 CLOCK_PIN = 14  # GP14
