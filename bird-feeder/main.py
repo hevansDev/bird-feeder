@@ -142,13 +142,18 @@ class SerialWeightSensor:
     
     def tare(self):
         """Send tare command to Pico"""
-        if self.connected and self.serial:
-            try:
-                self.serial.write(b"TARE\n")
-                self.serial.flush()
-                time.sleep(1)
-            except Exception as e:
-                print(f"Failed to send tare command: {e}")
+        if self.serial and self.serial.is_open:
+            self.serial.write(b'TARE\n')
+            # Wait for confirmation
+            start_time = time.time()
+            while time.time() - start_time < 2:
+                if self.serial.in_waiting:
+                    line = self.serial.readline().decode('utf-8').strip()
+                    if line.startswith("TARED:"):
+                        print(f"Scale tared: {line}")
+                        return True
+                time.sleep(0.1)
+        return False
     
     def close(self):
         """Clean shutdown of serial connection"""
