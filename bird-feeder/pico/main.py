@@ -4,7 +4,7 @@ import sys
 import time
 import uselect
 
-# HX711 Configuration
+# hx711 Configuration
 CLOCK_PIN = 14
 DATA_PIN = 15
 
@@ -27,8 +27,8 @@ def auto_tare(hx, samples=10):
     return None
 
 def main():
-    # Initialize HX711
-    hx = HX711(Pin(CLOCK_PIN), Pin(DATA_PIN))
+    # Initialize hx711
+    hx = hx711(Pin(CLOCK_PIN), Pin(DATA_PIN))
     hx.set_scale(CALIBRATION_FACTOR)
     
     # Auto-tare on startup

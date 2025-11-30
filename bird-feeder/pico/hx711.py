@@ -213,11 +213,11 @@ class hx711:
         sm_index: int = 0,
         prog: _pio_prog = pio_noblock()
     ):
-        """Create HX711 object
+        """Create hx711 object
 
         Args:
-            clk (Pin): GPIO pin connected to HX711's clock pin
-            dat (Pin): GPIO pin connected to HX711's data pin
+            clk (Pin): GPIO pin connected to hx711's clock pin
+            dat (Pin): GPIO pin connected to hx711's data pin
             sm_index (int, optional): Global state machine index to use. Defaults to 0.
             prog (_pio_prog, optional): PIO program. Defaults to built-in pio_noblock().
         """
@@ -242,7 +242,7 @@ class hx711:
         return self._sm.active()
 
     def __repr__(self) -> str:
-        return "[HX711 - CLK: {}, DAT: {}, SM_IDX: {}]".format(self.clock_pin, self.data_pin, self._sm_index)
+        return "[hx711 - CLK: {}, DAT: {}, SM_IDX: {}]".format(self.clock_pin, self.data_pin, self._sm_index)
 
     def __enter__(self):
         return self
@@ -253,7 +253,7 @@ class hx711:
         self.close()
 
     def close(self) -> None:
-        """Stop communication with HX711. Does not alter power state.
+        """Stop communication with hx711. Does not alter power state.
         """
         self._mut.acquire()
         self._sm.active(0)
@@ -261,7 +261,7 @@ class hx711:
         self._mut.release()
 
     def set_gain(self, gain: int) -> None:
-        """Change HX711 gain
+        """Change hx711 gain
 
         Args:
             gain (int):
@@ -275,10 +275,10 @@ class hx711:
 
     @classmethod
     def get_twos_comp(cls, raw: int) -> int:
-        """Returns the one's complement value from the raw HX711 value
+        """Returns the one's complement value from the raw hx711 value
 
         Args:
-            raw (int): raw value from HX711
+            raw (int): raw value from hx711
 
         Returns:
             int:
@@ -379,7 +379,7 @@ class hx711:
         return self.get_twos_comp(val) if val else None
 
     def set_power(self, pwr: int) -> None:
-        """Changes the power state of the HX711 and starts/stops the PIO program
+        """Changes the power state of the hx711 and starts/stops the PIO program
 
         Args:
             pwr (int):
@@ -408,7 +408,7 @@ class hx711:
 
     @classmethod
     def wait_power_down(cls) -> None:
-        """Waits for the appropriate amount of time for the HX711 to power down
+        """Waits for the appropriate amount of time for the hx711 to power down
         """
         time.sleep_us(cls.POWER_DOWN_TIMEOUT)
 
