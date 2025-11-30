@@ -1,4 +1,4 @@
-from hx711 import HX711
+import hx711
 from machine import Pin
 import sys
 import time
