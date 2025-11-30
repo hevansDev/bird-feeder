@@ -1,10 +1,9 @@
-import hx711
+from hx711 import hx711
 from machine import Pin
 import sys
 import time
-import uselect
 
-# hx711 Configuration
+# HX711 Configuration
 CLOCK_PIN = 14
 DATA_PIN = 15
 
@@ -15,21 +14,21 @@ def auto_tare(hx, samples=10):
     """Take multiple readings and average for tare value"""
     tare_readings = []
     for i in range(samples):
-        reading = hx.read()
+        reading = hx.get_value()
         if reading is not None:
             tare_readings.append(reading)
         time.sleep(0.05)
     
     if tare_readings:
-        tare_value = sum(tare_readings) / len(tare_readings)
-        hx.set_offset(tare_value)
-        return tare_value
+        return sum(tare_readings) / len(tare_readings)
     return None
 
 def main():
-    # Initialize hx711
+    # Initialize HX711
     hx = hx711(Pin(CLOCK_PIN), Pin(DATA_PIN))
-    hx.set_scale(CALIBRATION_FACTOR)
+    hx.set_power(hx711.power.pwr_up)
+    hx.set_gain(hx711.gain.gain_128)
+    hx711.wait_settle(hx711.rate.rate_10)
     
     # Auto-tare on startup
     tare_value = auto_tare(hx)
@@ -37,40 +36,17 @@ def main():
         print(f"TARED:{tare_value:.2f}")
     else:
         print("ERROR:TARE_FAILED")
+        tare_value = 0
     
     print("READY")
     
-    # Setup polling for stdin
-    poll = uselect.poll()
-    poll.register(sys.stdin, uselect.POLLIN)
-    
-    command_buffer = ""
-    
-    # Main loop
+    # Main loop - simplified without TARE command for now
     while True:
-        # Check for incoming data (non-blocking, 0ms timeout)
-        events = poll.poll(0)
-        if events:
-            char = sys.stdin.read(1)
-            if char:
-                if char == '\n':
-                    # Process complete command
-                    cmd = command_buffer.strip()
-                    if cmd == "TARE":
-                        print("TARING")
-                        tare_value = auto_tare(hx)
-                        if tare_value is not None:
-                            print(f"TARED:{tare_value:.2f}")
-                        else:
-                            print("ERROR:TARE_FAILED")
-                    command_buffer = ""
-                else:
-                    command_buffer += char
-        
         # Read and send weight
         try:
-            weight = hx.get_units()
-            if weight is not None:
+            raw = hx.get_value()
+            if raw is not None:
+                weight = (raw - tare_value) / CALIBRATION_FACTOR
                 print(f"WEIGHT:{weight:.2f}")
             else:
                 print("ERROR:NO_READING")
