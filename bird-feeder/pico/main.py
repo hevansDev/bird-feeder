@@ -2,13 +2,14 @@ from hx711 import hx711
 from machine import Pin
 import sys
 import time
+import select
 
 # HX711 Configuration
 CLOCK_PIN = 14
 DATA_PIN = 15
 
-# Just the calibration factor - tare calculated automatically
-CALIBRATION_FACTOR = -172.367900
+# Calibration factor from calibration
+CALIBRATION_FACTOR = -359.843080
 
 def auto_tare(hx, samples=10):
     """Take multiple readings and average for tare value"""
@@ -40,8 +41,32 @@ def main():
     
     print("READY")
     
-    # Main loop - simplified without TARE command for now
+    command_buffer = ""
+    
+    # Main loop
     while True:
+        # Check for incoming TARE commands (non-blocking)
+        try:
+            r, _, _ = select.select([sys.stdin], [], [], 0)
+            if r:
+                char = sys.stdin.read(1)
+                if char == '\n':
+                    # Process command
+                    if command_buffer.strip() == "TARE":
+                        print("TARING")
+                        new_tare = auto_tare(hx)
+                        if new_tare is not None:
+                            tare_value = new_tare
+                            print(f"TARED:{tare_value:.2f}")
+                        else:
+                            print("ERROR:TARE_FAILED")
+                    command_buffer = ""
+                else:
+                    command_buffer += char
+        except:
+            # If select fails, just continue
+            pass
+        
         # Read and send weight
         try:
             raw = hx.get_value()

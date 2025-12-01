@@ -31,7 +31,7 @@ hx711.wait_settle(hx711.rate.rate_10)
 
 print("Calibration starting...")
 print("Remove all weight from scale and press Enter to tare...")
-input()
+time.sleep(10)
 
 # Get tare value
 print("Taking tare readings...")
@@ -50,7 +50,8 @@ num_readings = 30  # Number of stable readings to collect
 samples_per_reading = 10  # Samples per stable reading
 
 print(f"\nPlace known weight on scale and enter its weight in grams: ", end="")
-known_weight = float(input())
+known_weight = float(100)
+time.sleep(10)
 
 print(f"\nCollecting {num_readings} stable readings...")
 print(f"Each reading uses {samples_per_reading} samples with outlier filtering")
