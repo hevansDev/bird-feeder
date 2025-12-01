@@ -13,6 +13,8 @@ import serial
 import threading
 from queue import Queue
 
+from kafka import KafkaProducer
+
 # Load environment variables - try .env.local first, fall back to .env
 if os.path.exists('.env.local'):
     load_dotenv('.env.local', override=True)
@@ -46,6 +48,16 @@ FEEDER_LOCATION = os.getenv('FEEDER_LOCATION', '')
 # File paths
 IMAGES_DIR = os.getenv('IMAGES_DIR', './images')
 PHOTO_COOLDOWN = float(os.getenv('PHOTO_COOLDOWN', '5.0'))
+
+TOPIC_NAME = "bird-data"
+
+producer = KafkaProducer(
+    bootstrap_servers=f"kafka-2a015ed7-bird-feeder-free-tier.d.aivencloud.com:19448",
+    security_protocol="SSL",
+    ssl_cafile="ca.pem",
+    ssl_certfile="service.cert",
+    ssl_keyfile="service.key",
+)
 
 # Import scale library only if needed for direct connection
 if SCALE_ENABLED and SCALE_TYPE == 'direct':
@@ -265,6 +277,7 @@ class BirdFeeder:
     def cleanAndExit(self):
         print("Cleaning...")
         self.cap.release()
+        producer.close()
         
         if SCALE_ENABLED:
             if SCALE_TYPE == 'serial':
@@ -350,6 +363,19 @@ class BirdFeeder:
                 self.last_photo_time = current_time
                 return True
         return False
+    
+    def send_data_to_kafka(self, weight, detection_type, timestamp):
+        """Send data to Kafka topic"""
+        message = json.dumps({
+            'userId': USER_ID,
+            'weight': weight,
+            'detectionType': detection_type,
+            'timestamp': timestamp.isoformat(),
+            'location': FEEDER_LOCATION if FEEDER_LOCATION else None
+        })
+
+        producer.send(TOPIC_NAME, message.encode('utf-8'))
+
 
     def upload_to_cloud(self, filepath, filename, weight, detection_type, timestamp):
         """Upload photo to Cloudflare Images"""
