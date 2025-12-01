@@ -358,6 +358,7 @@ class BirdFeeder:
 
                 if ENABLE_CLOUD_UPLOAD:
                     self.upload_to_cloud(filepath, filename, weight, detection_type, timestamp)
+                    self.send_data_to_kafka(weight, detection_type, datetime.now())
                 
                 print(f"Photo: {filename}")
                 self.last_photo_time = current_time

@@ -5,6 +5,11 @@ __pycache__/
 venv/
 *.egg-info/
 
+# Kafka certificates
+*.cert
+*.key
+ca.pem
+
 # Local images - don't commit bird photos!
 bird-feeder/images/*.jpg
 bird-feeder/images/*.jpeg
