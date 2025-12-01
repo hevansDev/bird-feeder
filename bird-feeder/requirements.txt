@@ -5,3 +5,5 @@ opencv-python
 numpy
 python-dotenv
 requests
+pyserial
+kafka-python
