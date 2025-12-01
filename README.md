@@ -45,22 +45,7 @@ python main.py
 
 ## Setting up the scale
 
-For a full guide on setting on the scale [see my blog on the topic](https://hughevans.dev/load-cell-raspberry-pi/).
-
-1. Run calibration script:
-
-```bash
-python calibration.py
-```
-
-2. Follow prompts to get your `SCALE_REFERENCE_UNIT`
-
-3. Update your `env` as below:
-
-```bash
-SCALE_ENABLED=true
-SCALE_REFERENCE_UNIT=-388.929792  # Your calibrated value
-```
+For a full guide on setting up and calibrating the directly attached scale [see my blog on the topic](https://hughevans.dev/load-cell-raspberry-pi/), blog on setting up Pico scale coming soon.
 
 ## Settings
 
@@ -78,9 +63,21 @@ SCALE_REFERENCE_UNIT=-388.929792  # Your calibrated value
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SCALE_ENABLED` | `false` | Enable weight-based detection |
+| `SCALE_TYPE` | `serial` | `direct` (Pi GPIO) or `serial` (Pico USB) |
 | `WEIGHT_THRESHOLD` | `5` | Minimum weight in grams (Goldcrest = 5g) |
-| `SCALE_REFERENCE_UNIT` | `-388.929792` | Calibration value from calibration.py |
 | `SCALE_WAIT_TIME` | `1.0` | Seconds to wait for scale reading after motion |
+
+**Direct GPIO Scale:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCALE_REFERENCE_UNIT` | `-388.929792` | Calibration value from calibration.py |
+
+**Pico Serial Scale:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PICO_SERIAL_PORT` | `/dev/ttyACM0` | USB serial port for Pico |
+| `PICO_SERIAL_BAUD` | `115200` | Serial baud rate |
+| `PICO_TIMEOUT` | `2.0` | Serial connection timeout |
 
 ### Cloud Upload
 
@@ -90,6 +87,8 @@ SCALE_REFERENCE_UNIT=-388.929792  # Your calibrated value
 | `UPLOAD_SERVICE_URL` | `https://...` | Cloudflare Worker endpoint (pre-configured) |
 | `USER_ID` | `anonymous` | Your unique username for the gallery |
 | `FEEDER_LOCATION` | _(empty)_ | City, Country |
+| `KAFKA_BROKER_URL` | `kafka-2a015ed7-bird-feeder-free-tier.d.aivencloud.com:19448` | Kafka broker URL for streaming bird data |
+
 
 **Privacy**: Only photos, timestamps, weights, and location (if provided) are shared. No personal information is collected.
 

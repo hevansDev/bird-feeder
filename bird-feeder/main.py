@@ -54,7 +54,7 @@ TOPIC_NAME = "bird-data"
 KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'kafka-2a015ed7-bird-feeder-free-tier.d.aivencloud.com:19448')
 
 producer = KafkaProducer(
-    bootstrap_servers=f"KAFKA_BROKER_URL",
+    bootstrap_servers=KAFKA_BROKER_URL,
     security_protocol="SSL",
     ssl_cafile="ca.pem",
     ssl_certfile="service.cert",
