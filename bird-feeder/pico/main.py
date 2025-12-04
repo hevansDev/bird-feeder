@@ -5,62 +5,69 @@ import time
 # HX711 Configuration
 CLOCK_PIN = 14
 DATA_PIN = 15
-CALIBRATION_FACTOR = -359.843080
+CALIBRATION_FACTOR = -284.254040
 
-def auto_tare(hx, samples=10):
-    tare_readings = []
+def take_reading(hx, samples=5):
+    """Take multiple readings and return average"""
+    readings = []
     for i in range(samples):
-        reading = hx.get_value()
-        if reading is not None:
-            tare_readings.append(reading)
-        time.sleep(0.05)
-    return sum(tare_readings) / len(tare_readings) if tare_readings else None
+        val = hx.get_value()
+        if val is not None:
+            readings.append(val)
+        time.sleep(0.02)
+    return sum(readings) / len(readings) if readings else None
 
 def main():
+    # Initialize HX711
     hx = hx711(Pin(CLOCK_PIN), Pin(DATA_PIN))
     hx.set_power(hx711.power.pwr_up)
     hx.set_gain(hx711.gain.gain_128)
     hx711.wait_settle(hx711.rate.rate_10)
     
-    tare_value = auto_tare(hx)
-    print(f"TARED:{tare_value:.2f}" if tare_value else "ERROR:TARE_FAILED")
-    if not tare_value:
+    # Initial tare
+    print("TARING")
+    time.sleep(0.5)
+    tare_value = take_reading(hx, samples=10)
+    if tare_value:
+        print(f"TARED:{tare_value:.2f}")
+    else:
+        print("ERROR:TARE_FAILED")
         tare_value = 0
     
     print("READY")
     
-    # Track consecutive low-weight readings for aggressive taring
-    low_weight_count = 0
-    TARE_AFTER_LOW_READINGS = 25  # 5 seconds of readings near zero (25 * 0.2s)
+    # Simple loop: just report weight constantly
+    consecutive_negatives = 0
     
     while True:
         try:
+            # Get raw reading
             raw = hx.get_value()
             if raw is not None:
+                # Calculate weight
                 weight = (raw - tare_value) / CALIBRATION_FACTOR
+                
+                # Print weight (always)
                 print(f"WEIGHT:{weight:.2f}")
                 
-                # If weight is very low (near zero or slightly negative), increment counter
-                if abs(weight) < 2.0:
-                    low_weight_count += 1
-                    
-                    # After 5 seconds of low readings, auto-tare
-                    if low_weight_count >= TARE_AFTER_LOW_READINGS:
-                        print("AUTO_TARING")
-                        new_tare = auto_tare(hx)
-                        if new_tare:
-                            tare_value = new_tare
+                # Auto-tare on negative values
+                if weight < -1.0:
+                    consecutive_negatives += 1
+                    if consecutive_negatives >= 3:
+                        print("AUTO_TARE_NEGATIVE")
+                        tare_value = take_reading(hx, samples=10)
+                        if tare_value:
                             print(f"TARED:{tare_value:.2f}")
-                        low_weight_count = 0
+                        consecutive_negatives = 0
                 else:
-                    # Reset counter if bird detected
-                    low_weight_count = 0
+                    consecutive_negatives = 0
             else:
                 print("ERROR:NO_READING")
-        except Exception as e:
-            print(f"ERROR:{e}")
         
-        time.sleep(0.2)
+        except Exception as e:
+            print(f"ERROR:{str(e)}")
+        
+        time.sleep(0.1)  # 10Hz reporting rate
 
 if __name__ == "__main__":
     main()
