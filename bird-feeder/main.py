@@ -377,7 +377,7 @@ class BirdFeeder:
         """Send data to Kafka topic"""
         message = json.dumps({
             'userId': USER_ID,
-            'weight': weight,
+            'weight': float(weight) if weight is not None else None,
             'detectionType': detection_type,
             'timestamp': timestamp.isoformat(),
             'location': FEEDER_LOCATION if FEEDER_LOCATION else None
@@ -389,7 +389,7 @@ class BirdFeeder:
         """Send weight data to Kafka topic"""
         message = json.dumps({
             'userId': USER_ID,
-            'weight': weight,
+            'weight': float(weight) if weight is not None else None,
             'timestamp': timestamp.isoformat(),
             'location': FEEDER_LOCATION if FEEDER_LOCATION else None
         })
@@ -400,7 +400,7 @@ class BirdFeeder:
         """Send motion data to Kafka topic"""
         message = json.dumps({
             'userId': USER_ID,
-            'motion': motion,
+            'motion': int(motion),  # Convert numpy int64 to Python int
             'timestamp': timestamp.isoformat(),
             'location': FEEDER_LOCATION if FEEDER_LOCATION else None
         })
