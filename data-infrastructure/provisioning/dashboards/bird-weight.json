@@ -133,6 +133,42 @@
               ]
             }
           }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "regex",
+                  "options": {
+                    "value": "${location}"
+                  }
+                },
+                "fieldName": "location"
+              }
+            ],
+            "match": "any",
+            "type": "include"
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "regex",
+                  "options": {
+                    "value": "${user}"
+                  }
+                },
+                "fieldName": "userId"
+              }
+            ],
+            "match": "any",
+            "type": "include"
+          }
         }
       ],
       "type": "timeseries"
@@ -264,6 +300,42 @@
             "match": "any",
             "type": "include"
           }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "regex",
+                  "options": {
+                    "value": "${location}"
+                  }
+                },
+                "fieldName": "location"
+              }
+            ],
+            "match": "any",
+            "type": "include"
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "regex",
+                  "options": {
+                    "value": "${user}"
+                  }
+                },
+                "fieldName": "userId"
+              }
+            ],
+            "match": "any",
+            "type": "include"
+          }
         }
       ],
       "type": "timeseries"
@@ -379,6 +451,42 @@
                 "weight"
               ]
             }
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "regex",
+                  "options": {
+                    "value": "${location}"
+                  }
+                },
+                "fieldName": "location"
+              }
+            ],
+            "match": "any",
+            "type": "include"
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "regex",
+                  "options": {
+                    "value": "${user}"
+                  }
+                },
+                "fieldName": "userId"
+              }
+            ],
+            "match": "any",
+            "type": "include"
           }
         }
       ],
@@ -496,6 +604,42 @@
               ]
             }
           }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "regex",
+                  "options": {
+                    "value": "${location}"
+                  }
+                },
+                "fieldName": "location"
+              }
+            ],
+            "match": "any",
+            "type": "include"
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "regex",
+                  "options": {
+                    "value": "${user}"
+                  }
+                },
+                "fieldName": "userId"
+              }
+            ],
+            "match": "any",
+            "type": "include"
+          }
         }
       ],
       "type": "timeseries"
@@ -510,6 +654,7 @@
   "templating": {
     "list": [
       {
+        "allValue": ".*",
         "current": {
           "text": "All",
           "value": "$__all"
@@ -518,10 +663,11 @@
         "label": "Location",
         "name": "location",
         "options": [],
-        "query": "London\\,United Kingdom,Boston\\, MA",
+        "query": "London\\, United Kingdom,Boston\\, MA",
         "type": "custom"
       },
       {
+        "allValue": ".*",
         "current": {
           "text": "All",
           "value": "$__all"
@@ -536,7 +682,7 @@
     ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-5m",
     "to": "now"
   },
   "timepicker": {},
