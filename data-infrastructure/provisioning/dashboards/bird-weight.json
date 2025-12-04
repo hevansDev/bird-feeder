@@ -289,24 +289,6 @@
             "filters": [
               {
                 "config": {
-                  "id": "notEqual",
-                  "options": {
-                    "value": "motion-only"
-                  }
-                },
-                "fieldName": "detectionType"
-              }
-            ],
-            "match": "any",
-            "type": "include"
-          }
-        },
-        {
-          "id": "filterByValue",
-          "options": {
-            "filters": [
-              {
-                "config": {
                   "id": "regex",
                   "options": {
                     "value": "${location}"
@@ -689,5 +671,5 @@
   "timezone": "browser",
   "title": "Bird Feeder",
   "uid": "bird-weights",
-  "version": 2
+  "version": 9
 }
