@@ -49,6 +49,9 @@ FEEDER_LOCATION = os.getenv('FEEDER_LOCATION', '')
 IMAGES_DIR = os.getenv('IMAGES_DIR', './images')
 PHOTO_COOLDOWN = float(os.getenv('PHOTO_COOLDOWN', '5.0'))
 
+# Metrics config
+METRICS_INTERVAL = float(os.getenv('METRICS_INTERVAL', '10.0'))  # Send metrics every 10 seconds
+
 TOPIC_NAME = "bird-data"
 
 KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'kafka-2a015ed7-bird-feeder-free-tier.d.aivencloud.com:19448')
@@ -186,6 +189,13 @@ class BirdFeeder:
         self.approach_time = None
         self.last_photo_time = None
         
+        # Metrics tracking
+        self.metrics_counter = {
+            'messages': 0,
+            'bytes': 0,
+            'last_sent': time.time()
+        }
+        
         Path(IMAGES_DIR).mkdir(exist_ok=True)
         
         print("Initializing camera...")
@@ -210,6 +220,53 @@ class BirdFeeder:
         if MOTION_ENABLED:
             self.prev_frame = None
             print("Motion detection ready! Waiting for birds...")
+    
+    def send_to_kafka(self, topic, data_dict):
+        """Unified Kafka send with metrics tracking"""
+        message = json.dumps(data_dict)
+        message_bytes = message.encode('utf-8')
+        
+        producer.send(topic, message_bytes)
+        
+        # Track metrics
+        self.metrics_counter['messages'] += 1
+        self.metrics_counter['bytes'] += len(message_bytes)
+        
+        # Send metrics every METRICS_INTERVAL seconds
+        if time.time() - self.metrics_counter['last_sent'] >= METRICS_INTERVAL:
+            self.send_metrics()
+    
+    def send_metrics(self):
+        """Send aggregated metrics to Kafka"""
+        elapsed = time.time() - self.metrics_counter['last_sent']
+        
+        if elapsed == 0:
+            return
+        
+        metrics = {
+            'userId': USER_ID,
+            'location': FEEDER_LOCATION if FEEDER_LOCATION else None,
+            'messagesPerSec': round(self.metrics_counter['messages'] / elapsed, 2),
+            'bytesPerSec': round(self.metrics_counter['bytes'] / elapsed, 2),
+            'kbPerSec': round((self.metrics_counter['bytes'] / 1024) / elapsed, 2),
+            'totalMessages': self.metrics_counter['messages'],
+            'totalBytes': self.metrics_counter['bytes'],
+            'windowSeconds': round(elapsed, 2),
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Send metrics without tracking (to avoid recursion)
+        message = json.dumps(metrics)
+        producer.send('metrics', message.encode('utf-8'))
+        
+        print(f"Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s")
+        
+        # Reset counters
+        self.metrics_counter = {
+            'messages': 0,
+            'bytes': 0,
+            'last_sent': time.time()
+        }
     
     def read_sensors(self):
         weight = self.get_weight()
@@ -284,6 +341,11 @@ class BirdFeeder:
 
     def cleanAndExit(self):
         print("Cleaning...")
+        
+        # Send final metrics before closing
+        if self.metrics_counter['messages'] > 0:
+            self.send_metrics()
+        
         self.cap.release()
         producer.close()
         
@@ -374,38 +436,35 @@ class BirdFeeder:
         return False
     
     def send_bird_data_to_kafka(self, weight, detection_type, timestamp):
-        """Send data to Kafka topic"""
-        message = json.dumps({
+        """Send bird detection data to Kafka topic"""
+        data = {
             'userId': USER_ID,
             'weight': float(weight) if weight is not None else None,
             'detectionType': detection_type,
             'timestamp': timestamp.isoformat(),
             'location': FEEDER_LOCATION if FEEDER_LOCATION else None
-        })
-
-        producer.send(TOPIC_NAME, message.encode('utf-8'))
+        }
+        self.send_to_kafka(TOPIC_NAME, data)
     
     def send_weight_data_to_kafka(self, weight, timestamp):
         """Send weight data to Kafka topic"""
-        message = json.dumps({
+        data = {
             'userId': USER_ID,
             'weight': float(weight) if weight is not None else None,
             'timestamp': timestamp.isoformat(),
             'location': FEEDER_LOCATION if FEEDER_LOCATION else None
-        })
-
-        producer.send("weight", message.encode('utf-8'))
+        }
+        self.send_to_kafka("weight", data)
 
     def send_motion_data_to_kafka(self, motion, timestamp):
         """Send motion data to Kafka topic"""
-        message = json.dumps({
+        data = {
             'userId': USER_ID,
             'motion': int(motion),  # Convert numpy int64 to Python int
             'timestamp': timestamp.isoformat(),
             'location': FEEDER_LOCATION if FEEDER_LOCATION else None
-        })
-
-        producer.send("motion", message.encode('utf-8'))
+        }
+        self.send_to_kafka("motion", data)
 
     def upload_to_cloud(self, filepath, filename, weight, detection_type, timestamp):
         """Upload photo to Cloudflare Images"""
