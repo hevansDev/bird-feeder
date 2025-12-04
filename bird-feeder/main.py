@@ -38,7 +38,6 @@ SCALE_TYPE = os.getenv('SCALE_TYPE', 'serial')  # 'direct' or 'serial'
 PICO_SERIAL_PORT = os.getenv('PICO_SERIAL_PORT', '/dev/ttyACM0')
 PICO_SERIAL_BAUD = int(os.getenv('PICO_SERIAL_BAUD', '115200'))
 PICO_TIMEOUT = float(os.getenv('PICO_TIMEOUT', '2.0'))
-PICO_RESTART_INTERVAL = int(os.getenv('PICO_RESTART_INTERVAL', '1800'))  # 30 minutes default
 
 # Cloud upload config
 ENABLE_CLOUD_UPLOAD = os.getenv('ENABLE_CLOUD_UPLOAD', 'false').lower() == 'true'
@@ -72,21 +71,16 @@ if SCALE_ENABLED and SCALE_TYPE == 'direct':
         SCALE_ENABLED = False
 
 class SerialWeightSensor:
-    """Interface for Pico weight sensor over serial - READ ONLY with auto-restart"""
+    """Interface for Pico weight sensor over serial USB"""
     
-    def __init__(self, port, baudrate=115200, timeout=2.0, restart_interval=3600):
+    def __init__(self, port, baudrate=115200, timeout=2.0):
         self.port = port
         self.baudrate = baudrate
         self.serial = None
         self.latest_weight = None
-        self.weight_history = []
         self.connected = False
         self.reader_thread = None
         self.running = False
-        self.restart_interval = restart_interval  # Seconds between restarts (default 1 hour)
-        self.last_restart_time = time.time()
-        self.stuck_weight_count = 0  # Track if weight is stuck
-        self.last_weight = None
         
         self.connect()
     
@@ -95,33 +89,30 @@ class SerialWeightSensor:
         try:
             print(f"Connecting to Pico on {self.port}...")
             self.serial = serial.Serial(self.port, self.baudrate, timeout=1.0)
-            time.sleep(2)
+            time.sleep(2)  # Wait for Pico to initialize
             
+            # Clear any startup messages
             self.serial.reset_input_buffer()
             
-            # Wait for READY signal
+            # Wait for WEIGHT messages (Pico may have already sent READY)
             start_time = time.time()
-            while time.time() - start_time < 5:
+            while time.time() - start_time < 3:
                 if self.serial.in_waiting:
-                    line = self.serial.readline().decode('utf-8', errors='ignore').strip()
-                    if line:
-                        print(f"Pico: {line}")
-                    if line == "READY" or line.startswith("WEIGHT:"):
-                        print("Pico weight sensor connected!")
+                    line = self.serial.readline().decode('utf-8').strip()
+                    print(f"DEBUG: Received from Pico: '{line}'")
+                    if line == "READY" or line.startswith("WEIGHT:") or line.startswith("TARED"):
+                        print("Pico weight sensor ready!")
                         self.connected = True
                         break
                 time.sleep(0.1)
 
             if not self.connected:
-                raise RuntimeError("Pico didn't send READY signal")
+                raise RuntimeError("Pico didn't send any data")
             
             # Start reader thread
             self.running = True
             self.reader_thread = threading.Thread(target=self._read_loop, daemon=True)
             self.reader_thread.start()
-            
-            # Reset restart timer
-            self.last_restart_time = time.time()
             
         except Exception as e:
             print(f"Failed to connect to Pico: {e}")
@@ -133,39 +124,25 @@ class SerialWeightSensor:
         while self.running:
             try:
                 if self.serial.in_waiting:
-                    line = self.serial.readline().decode('utf-8', errors='ignore').strip()
+                    line = self.serial.readline().decode('utf-8').strip()
                     
                     if line.startswith("WEIGHT:"):
                         try:
-                            weight_str = line.split(":", 1)[1].strip()
-                            weight = float(weight_str)
-                            
-                            # Detect stuck weight (same value repeated many times)
-                            if self.last_weight is not None and abs(weight - self.last_weight) < 0.1:
-                                self.stuck_weight_count += 1
-                            else:
-                                self.stuck_weight_count = 0
-                            
-                            self.last_weight = weight
-                            
-                            # Store in history
-                            self.weight_history.append(weight)
-                            if len(self.weight_history) > 10:
-                                self.weight_history.pop(0)
-                            
+                            weight = float(line.split(":")[1])
                             self.latest_weight = weight
-                            
-                        except (ValueError, IndexError):
+                        except ValueError:
                             pass
                     
-                    elif line.startswith("TARED:") or line.startswith("STARTUP_ZERO:"):
-                        print(f"Pico: {line}")
-                        # Reset stuck counter on tare
-                        self.stuck_weight_count = 0
-                        self.last_weight = None
+                    elif line.startswith("ERROR:"):
+                        error = line.split(":")[1]
+                        if error != "NO_READING":
+                            print(f"Pico error: {error}")
                     
-                    elif "TARE" in line or "ZERO" in line or "ERROR" in line:
-                        print(f"Pico: {line}")
+                    elif line == "TARED":
+                        print("Pico: Scale tared successfully")
+                    
+                    elif line == "TARING":
+                        print("Pico: Taring scale...")
                 
                 time.sleep(0.01)
                 
@@ -173,88 +150,24 @@ class SerialWeightSensor:
                 print(f"Serial read error: {e}")
                 time.sleep(0.1)
     
-    def should_restart(self):
-        """Check if Pico should be restarted"""
-        current_time = time.time()
-        
-        # Restart if stuck on same weight for 50+ readings (5 seconds)
-        if self.stuck_weight_count > 50:
-            print(f"WARNING: Weight stuck at {self.last_weight:.2f}g for 50+ readings, restarting Pico...")
-            return True
-        
-        # Periodic restart (default every hour)
-        if current_time - self.last_restart_time > self.restart_interval:
-            print(f"Periodic restart: {self.restart_interval}s elapsed")
-            return True
-        
-        return False
+    def get_weight(self):
+        """Get latest weight reading"""
+        return self.latest_weight
     
-    def restart_pico(self):
-        """Restart the Pico by toggling DTR/RTS (soft reset)"""
-        try:
-            print("Restarting Pico...")
-            
-            # Stop reader thread
-            self.running = False
-            if self.reader_thread:
-                self.reader_thread.join(timeout=2)
-            
-            # Close connection
-            if self.serial and self.serial.is_open:
-                self.serial.close()
-            
-            # Wait a moment
-            time.sleep(1)
-            
-            # Reconnect
-            self.weight_history = []
-            self.stuck_weight_count = 0
-            self.last_weight = None
-            self.connect()
-            
-            print("Pico restarted successfully!")
-            return True
-            
-        except Exception as e:
-            print(f"Failed to restart Pico: {e}")
-            return False
-    
-    def get_weight(self, samples=None, wait_time=None):
-        """Get weight reading with auto-restart check"""
-        
-        # Check if restart needed
-        if self.should_restart():
-            self.restart_pico()
-        
-        if wait_time:
+    def tare(self):
+        """Send tare command to Pico"""
+        if self.serial and self.serial.is_open:
+            self.serial.write(b'TARE\n')
+            # Wait for confirmation
             start_time = time.time()
-            fresh_readings = []
-            
-            while time.time() - start_time < wait_time:
-                if self.latest_weight is not None:
-                    fresh_readings.append(self.latest_weight)
+            while time.time() - start_time < 2:
+                if self.serial.in_waiting:
+                    line = self.serial.readline().decode('utf-8').strip()
+                    if line.startswith("TARED:"):
+                        print(f"Scale tared: {line}")
+                        return True
                 time.sleep(0.1)
-            
-            if fresh_readings:
-                fresh_readings.sort()
-                if len(fresh_readings) >= 5:
-                    trim = max(1, len(fresh_readings) // 5)
-                    trimmed = fresh_readings[trim:-trim]
-                    return sum(trimmed) / len(trimmed)
-                else:
-                    return sum(fresh_readings) / len(fresh_readings)
-            return None
-        
-        elif samples and len(self.weight_history) >= samples:
-            recent = self.weight_history[-samples:]
-            return sum(recent) / len(recent)
-        
-        elif self.weight_history:
-            recent = self.weight_history[-5:]
-            return sum(recent) / len(recent)
-        
-        else:
-            return self.latest_weight
+        return False
     
     def close(self):
         """Clean shutdown of serial connection"""
@@ -284,12 +197,7 @@ class BirdFeeder:
         if SCALE_ENABLED:
             if SCALE_TYPE == 'serial':
                 print("Initializing Pico serial weight sensor...")
-                self.scale = SerialWeightSensor(
-                    PICO_SERIAL_PORT, 
-                    PICO_SERIAL_BAUD, 
-                    PICO_TIMEOUT,
-                    restart_interval=PICO_RESTART_INTERVAL
-                )
+                self.scale = SerialWeightSensor(PICO_SERIAL_PORT, PICO_SERIAL_BAUD, PICO_TIMEOUT)
             else:  # direct
                 print("Initializing direct HX711 scale...")
                 self.hx = HX711(5, 6)
@@ -307,6 +215,12 @@ class BirdFeeder:
         weight = self.get_weight()
         motion = self.detect_motion() if MOTION_ENABLED else 0
         current_time = time.time()
+
+        # Send raw data to Kafka
+        if SCALE_ENABLED and weight is not None:
+            self.send_weight_data_to_kafka(weight, datetime.now())
+        if MOTION_ENABLED:
+            self.send_motion_data_to_kafka(motion, datetime.now())
         
         # Determine detection state
         motion_detected = motion > MOTION_THRESHOLD
@@ -388,8 +302,8 @@ class BirdFeeder:
             return None
         
         if SCALE_TYPE == 'serial':
-            # Get averaged reading from Pico over 1 second
-            return self.scale.get_weight(wait_time=1.0)
+            # Just return latest reading from Pico
+            return self.scale.get_weight()
         
         else:  # direct HX711
             readings = []
@@ -452,14 +366,14 @@ class BirdFeeder:
 
                 if ENABLE_CLOUD_UPLOAD:
                     self.upload_to_cloud(filepath, filename, weight, detection_type, timestamp)
-                    self.send_data_to_kafka(weight, detection_type, datetime.now())
+                    self.send_bird_data_to_kafka(weight, detection_type, datetime.now())
                 
                 print(f"Photo: {filename}")
                 self.last_photo_time = current_time
                 return True
         return False
     
-    def send_data_to_kafka(self, weight, detection_type, timestamp):
+    def send_bird_data_to_kafka(self, weight, detection_type, timestamp):
         """Send data to Kafka topic"""
         message = json.dumps({
             'userId': USER_ID,
@@ -470,6 +384,28 @@ class BirdFeeder:
         })
 
         producer.send(TOPIC_NAME, message.encode('utf-8'))
+    
+    def send_weight_data_to_kafka(self, weight, timestamp):
+        """Send weight data to Kafka topic"""
+        message = json.dumps({
+            'userId': USER_ID,
+            'weight': weight,
+            'timestamp': timestamp.isoformat(),
+            'location': FEEDER_LOCATION if FEEDER_LOCATION else None
+        })
+
+        producer.send("weight", message.encode('utf-8'))
+
+    def send_motion_data_to_kafka(self, motion, timestamp):
+        """Send motion data to Kafka topic"""
+        message = json.dumps({
+            'userId': USER_ID,
+            'motion': motion,
+            'timestamp': timestamp.isoformat(),
+            'location': FEEDER_LOCATION if FEEDER_LOCATION else None
+        })
+
+        producer.send("motion", message.encode('utf-8'))
 
     def upload_to_cloud(self, filepath, filename, weight, detection_type, timestamp):
         """Upload photo to Cloudflare Images"""
@@ -521,8 +457,7 @@ class BirdFeeder:
         
         if SCALE_ENABLED:
             if SCALE_TYPE == 'serial':
-                # Pico handles taring automatically on negative values
-                pass
+                self.scale.tare()
             else:
                 self.hx.tare()
                 print("Scale tared! Waiting for birds...")
