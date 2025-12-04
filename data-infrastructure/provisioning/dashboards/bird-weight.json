@@ -518,7 +518,7 @@
         "label": "Location",
         "name": "location",
         "options": [],
-        "query": "",
+        "query": "London\\,United Kingdom,Boston\\, MA",
         "type": "custom"
       },
       {
@@ -530,7 +530,7 @@
         "label": "User",
         "name": "user",
         "options": [],
-        "query": "",
+        "query": "anonymous,hugh,reena",
         "type": "custom"
       }
     ]
