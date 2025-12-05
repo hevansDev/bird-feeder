@@ -259,7 +259,7 @@ class BirdFeeder:
         message = json.dumps(metrics)
         producer.send('metrics', message.encode('utf-8'))
         
-        print(f"Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s")
+        # print(f"Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s")
         
         # Reset counters
         self.metrics_counter = {
