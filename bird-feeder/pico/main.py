@@ -36,13 +36,13 @@ def main():
     
     print("READY")
     
-    # Simple loop: just report weight constantly
-    consecutive_negatives = 0
+    consecutive_readings = 0
     
     while True:
         try:
             # Get raw reading
             raw = hx.get_value()
+            consecutive_readings += 1
             if raw is not None:
                 # Calculate weight
                 weight = (raw - tare_value) / CALIBRATION_FACTOR
@@ -51,16 +51,12 @@ def main():
                 print(f"WEIGHT:{weight:.2f}")
                 
                 # Auto-tare on negative values
-                if weight < -1.0:
-                    consecutive_negatives += 1
-                    if consecutive_negatives >= 3:
-                        print("AUTO_TARE_NEGATIVE")
-                        tare_value = take_reading(hx, samples=10)
-                        if tare_value:
-                            print(f"TARED:{tare_value:.2f}")
-                        consecutive_negatives = 0
-                else:
-                    consecutive_negatives = 0
+                if (weight < -1.0) or (consecutive_readings >= 100):
+                    print("AUTO_TARE")
+                    tare_value = take_reading(hx, samples=10)
+                    if tare_value:
+                        print(f"TARED:{tare_value:.2f}")
+                        consecutive_readings = 0
             else:
                 print("ERROR:NO_READING")
         
