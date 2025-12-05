@@ -24,20 +24,24 @@ def main():
     hx.set_gain(hx711.gain.gain_128)
     hx711.wait_settle(hx711.rate.rate_10)
     
-    # Initial tare
-    print("TARING")
-    time.sleep(0.5)
-    tare_value = take_reading(hx, samples=10)
+    # ZERO/TARE ON STARTUP
+    print("ZEROING_ON_STARTUP")
+    time.sleep(1.0)
+    
+    tare_value = take_reading(hx, samples=15)
+    
     if tare_value:
-        print(f"TARED:{tare_value:.2f}")
+        print("STARTUP_ZERO:{:.2f}".format(tare_value))
+        print("READY")
     else:
-        print("ERROR:TARE_FAILED")
+        print("ERROR:STARTUP_ZERO_FAILED")
         tare_value = 0
+        print("READY")
     
-    print("READY")
-    
-    # Simple loop: just report weight constantly
-    consecutive_negatives = 0
+    # Track persistent weight for auto-tare
+    low_weight_count = 0
+    HIGH_WEIGHT_TARE_THRESHOLD = 100  # 10 seconds at 10Hz = 100 readings
+    WEIGHT_TOLERANCE = 2.0  # If weight stays between -2g and +2g, consider it "zero"
     
     while True:
         try:
@@ -48,26 +52,40 @@ def main():
                 weight = (raw - tare_value) / CALIBRATION_FACTOR
                 
                 # Print weight (always)
-                print(f"WEIGHT:{weight:.2f}")
+                print("WEIGHT:{:.2f}".format(weight))
                 
-                # Auto-tare on negative values
-                if weight < -1.0:
-                    consecutive_negatives += 1
-                    if consecutive_negatives >= 3:
-                        print("AUTO_TARE_NEGATIVE")
-                        tare_value = take_reading(hx, samples=10)
-                        if tare_value:
-                            print(f"TARED:{tare_value:.2f}")
-                        consecutive_negatives = 0
+                # Check if weight is in "zero" range (-2g to +2g)
+                if abs(weight) <= WEIGHT_TOLERANCE:
+                    low_weight_count += 1
+                    
+                    # After 10 seconds of low weight, re-tare
+                    if low_weight_count >= HIGH_WEIGHT_TARE_THRESHOLD:
+                        print("IDLE_RETARE")
+                        new_tare = take_reading(hx, samples=10)
+                        if new_tare:
+                            tare_value = new_tare
+                            print("RETARED:{:.2f}".format(new_tare))
+                        low_weight_count = 0
+                
+                # Weight is significantly non-zero (bird or drift)
                 else:
-                    consecutive_negatives = 0
+                    low_weight_count = 0
+                
+                # Emergency tare on negative values (drift)
+                if weight < -2.0:
+                    print("NEGATIVE_RETARE")
+                    new_tare = take_reading(hx, samples=10)
+                    if new_tare:
+                        tare_value = new_tare
+                        print("RETARED:{:.2f}".format(new_tare))
+                    low_weight_count = 0
             else:
                 print("ERROR:NO_READING")
         
         except Exception as e:
-            print(f"ERROR:{str(e)}")
+            print("ERROR:{}".format(str(e)))
         
-        time.sleep(0.1)  # 10Hz reporting rate
+        time.sleep(0.1)
 
 if __name__ == "__main__":
     main()
