@@ -298,14 +298,14 @@ class BirdFeeder:
                     self.bird_present = True
                     self.bird_approaching = False
                     self.no_motion_frames = 0
-                    self.on_bird_landed(weight, "motion-only")
+                    self.on_bird_landed("motion-only")
             
             # Weight detected (with or without motion)
             elif weight_detected and not self.bird_present:
                 self.bird_present = True
                 self.bird_approaching = False
                 self.no_motion_frames = 0
-                self.on_bird_landed(weight, "scale")
+                self.on_bird_landed("scale")
             
             # Bird present, check if it left
             elif self.bird_present:
@@ -327,7 +327,7 @@ class BirdFeeder:
                 self.bird_present = True
                 self.no_motion_frames = 0
                 detection_type = "scale" if SCALE_ENABLED else "motion"
-                self.on_bird_landed(weight, detection_type)
+                self.on_bird_landed(detection_type)
             
             elif not bird_detected and self.bird_present:
                 self.no_motion_frames += 1
@@ -503,8 +503,10 @@ class BirdFeeder:
         except Exception as e:
             print(f"Cloud upload error: {e}")
 
-    def on_bird_landed(self, weight, detection_type):
+    def on_bird_landed(self, detection_type):
         """Called when a bird lands. detection_type: 'scale', 'motion', or 'motion-only'"""
+        time.sleep(1)
+        weight = self.get_weight()
         timestamp = datetime.now()
         weight_str = f"{weight:.2f}g" if weight is not None else "N/A"
         print(f"Bird landed at {timestamp.isoformat()}! Weight: {weight_str} (detected by: {detection_type})")
