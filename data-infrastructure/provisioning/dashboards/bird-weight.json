@@ -107,7 +107,7 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "autoOffsetReset": "earliest",
+          "autoOffsetReset": "latest",
           "datasource": {
             "type": "hamedkarbasi93-kafka-datasource",
             "uid": "P21D640A339805D56"
@@ -259,7 +259,7 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "autoOffsetReset": "earliest",
+          "autoOffsetReset": "latest",
           "datasource": {
             "type": "hamedkarbasi93-kafka-datasource",
             "uid": "P21D640A339805D56"
@@ -413,7 +413,7 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "autoOffsetReset": "earliest",
+          "autoOffsetReset": "latest",
           "datasource": {
             "type": "hamedkarbasi93-kafka-datasource",
             "uid": "P21D640A339805D56"
@@ -569,7 +569,7 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "autoOffsetReset": "earliest",
+          "autoOffsetReset": "latest",
           "datasource": {
             "type": "hamedkarbasi93-kafka-datasource",
             "uid": "P21D640A339805D56"
@@ -681,5 +681,5 @@
   "timezone": "browser",
   "title": "Bird Feeder",
   "uid": "bird-weights",
-  "version": 10
+  "version": 12
 }
