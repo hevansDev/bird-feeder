@@ -241,8 +241,8 @@ class BirdFeeder:
             if time.time() - self.metrics_counter['last_sent'] >= METRICS_INTERVAL:
                 self.send_metrics()
             
-    except Exception as e:
-        print(f"✗ FAILED to send to {topic}: {e}")
+        except Exception as e:
+            print(f"✗ FAILED to send to {topic}: {e}")
     
     def send_metrics(self):
         """Send aggregated metrics to Kafka"""
