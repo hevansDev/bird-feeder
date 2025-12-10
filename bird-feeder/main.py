@@ -223,18 +223,26 @@ class BirdFeeder:
     
     def send_to_kafka(self, topic, data_dict):
         """Unified Kafka send with metrics tracking"""
-        message = json.dumps(data_dict)
-        message_bytes = message.encode('utf-8')
-        
-        producer.send(topic, message_bytes)
-        
-        # Track metrics
-        self.metrics_counter['messages'] += 1
-        self.metrics_counter['bytes'] += len(message_bytes)
-        
-        # Send metrics every METRICS_INTERVAL seconds
-        if time.time() - self.metrics_counter['last_sent'] >= METRICS_INTERVAL:
-            self.send_metrics()
+        try:
+            message = json.dumps(data_dict)
+            message_bytes = message.encode('utf-8')
+            
+            future = producer.send(topic, message_bytes)
+            # Wait for confirmation
+            record_metadata = future.get(timeout=10)
+            
+            print(f"✓ Sent to {topic}: offset={record_metadata.offset}, partition={record_metadata.partition}")
+            
+            # Track metrics
+            self.metrics_counter['messages'] += 1
+            self.metrics_counter['bytes'] += len(message_bytes)
+            
+            # Send metrics every METRICS_INTERVAL seconds
+            if time.time() - self.metrics_counter['last_sent'] >= METRICS_INTERVAL:
+                self.send_metrics()
+            
+    except Exception as e:
+        print(f"✗ FAILED to send to {topic}: {e}")
     
     def send_metrics(self):
         """Send aggregated metrics to Kafka"""

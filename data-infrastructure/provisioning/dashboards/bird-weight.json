@@ -170,6 +170,16 @@
             "match": "any",
             "type": "include"
           }
+        },
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": [
+              "userId",
+              "location"
+            ],
+            "keepFields": false
+          }
         }
       ],
       "type": "timeseries"
@@ -476,6 +486,16 @@
             "match": "any",
             "type": "include"
           }
+        },
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": [
+              "userId",
+              "location"
+            ],
+            "keepFields": false
+          }
         }
       ],
       "type": "timeseries"
@@ -681,5 +701,5 @@
   "timezone": "browser",
   "title": "Bird Feeder",
   "uid": "bird-weights",
-  "version": 12
+  "version": 13
 }
