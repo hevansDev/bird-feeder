@@ -196,6 +196,12 @@ class BirdFeeder:
             'last_sent': time.time()
         }
         
+        # Start metrics thread
+        self.metrics_running = True
+        self.metrics_thread = threading.Thread(target=self._metrics_loop, daemon=True)
+        self.metrics_thread.start()
+        print(f"✓ Metrics thread started (interval: {METRICS_INTERVAL}s)")
+        
         Path(IMAGES_DIR).mkdir(exist_ok=True)
         
         print("Initializing camera...")
@@ -221,6 +227,17 @@ class BirdFeeder:
             self.prev_frame = None
             print("Motion detection ready! Waiting for birds...")
     
+    def _metrics_loop(self):
+        """Background thread to send metrics periodically"""
+        while self.metrics_running:
+            try:
+                time.sleep(METRICS_INTERVAL)
+                self.send_metrics()
+            except Exception as e:
+                print(f"Error in metrics loop: {e}")
+                import traceback
+                traceback.print_exc()
+    
     def send_to_kafka(self, topic, data_dict):
         """Unified Kafka send with metrics tracking"""
         try:
@@ -231,15 +248,11 @@ class BirdFeeder:
             # Wait for confirmation
             record_metadata = future.get(timeout=10)
             
-            print(f"✓ Sent to {topic}: offset={record_metadata.offset}, partition={record_metadata.partition}")
+            # print(f"✓ Sent to {topic}: offset={record_metadata.offset}, partition={record_metadata.partition}")
             
             # Track metrics
             self.metrics_counter['messages'] += 1
             self.metrics_counter['bytes'] += len(message_bytes)
-            
-            # Send metrics every METRICS_INTERVAL seconds
-            if time.time() - self.metrics_counter['last_sent'] >= METRICS_INTERVAL:
-                self.send_metrics()
             
         except Exception as e:
             print(f"✗ FAILED to send to {topic}: {e}")
@@ -267,7 +280,7 @@ class BirdFeeder:
         message = json.dumps(metrics)
         producer.send('metrics', message.encode('utf-8'))
         
-        # print(f"Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s")
+        print(f"📊 Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s")
         
         # Reset counters
         self.metrics_counter = {
@@ -349,6 +362,11 @@ class BirdFeeder:
 
     def cleanAndExit(self):
         print("Cleaning...")
+        
+        # Stop metrics thread
+        self.metrics_running = False
+        if hasattr(self, 'metrics_thread'):
+            self.metrics_thread.join(timeout=2)
         
         # Send final metrics before closing
         if self.metrics_counter['messages'] > 0:
