@@ -88,7 +88,6 @@ def create_producer(retries=5, delay=10):
 
 producer = create_producer()
 
-
 class BirdFeeder:
     def __init__(self):
         self.bird_present = False
@@ -123,7 +122,6 @@ class BirdFeeder:
                 self.scale = SerialWeightSensor(PICO_SERIAL_PORT, PICO_SERIAL_BAUD, PICO_TIMEOUT)
             else:  # direct
                 self.scale = DirectWeightSensor(reference_unit=SCALE_REFERENCE_UNIT)
-                
         
         if MOTION_ENABLED:
             self.prev_frame = None
