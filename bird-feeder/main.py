@@ -70,15 +70,6 @@ producer = KafkaProducer(
     ssl_keyfile="service.key",
 )
 
-# Import scale library only if needed for direct connection
-if SCALE_ENABLED and SCALE_TYPE == 'direct':
-    try:
-        import RPi.GPIO as GPIO
-        from hx711 import HX711
-    except ImportError:
-        print("Warning: Scale enabled but RPi.GPIO/HX711 not available")
-        SCALE_ENABLED = False
-
 class BirdFeeder:
     def __init__(self):
         self.bird_present = False
@@ -113,7 +104,6 @@ class BirdFeeder:
                 self.scale = SerialWeightSensor(PICO_SERIAL_PORT, PICO_SERIAL_BAUD, PICO_TIMEOUT)
             else:  # direct
                 self.scale = DirectWeightSensor(reference_unit=SCALE_REFERENCE_UNIT)
-                
         
         if MOTION_ENABLED:
             self.prev_frame = None
@@ -275,35 +265,6 @@ class BirdFeeder:
         
         print("Bye!")
         sys.exit()
-
-    def get_weight(self, samples=35):
-        """Get stable weight reading. Returns float (grams) or None."""
-        if not SCALE_ENABLED:
-            return None
-        
-        if SCALE_TYPE == 'serial':
-            # Just return latest reading from Pico
-            return self.scale.get_weight()
-        
-        else:  # direct HX711
-            readings = []
-            for i in range(samples):
-                reading = self.hx.get_weight(1)
-                readings.append(reading)
-                time.sleep(0.02)
-            
-            readings.sort()
-            outliers_to_remove = max(3, int(samples * 0.4))
-            trimmed = readings[outliers_to_remove:-outliers_to_remove]
-            
-            if len(trimmed) >= 3:
-                median_index = len(trimmed) // 2
-                stable_weight = trimmed[median_index]
-            else:
-                median_index = len(readings) // 2
-                stable_weight = readings[median_index]
-            
-            return stable_weight
 
     def detect_motion(self):
         """Detect motion using frame differencing. Returns int (motion pixels)."""
