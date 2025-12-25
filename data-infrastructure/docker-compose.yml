@@ -1,0 +1,17 @@
+services:
+  grafana:
+    image: grafana/grafana-enterprise
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      - GF_INSTALL_PLUGINS=hamedkarbasi93-kafka-datasource
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning
+      - ./certs:/etc/grafana/certs:ro  # Read-only mount for certificates
+    user: "472"
+
+volumes:
+  grafana-storage:

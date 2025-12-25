@@ -49,6 +49,9 @@ FEEDER_LOCATION = os.getenv('FEEDER_LOCATION', '')
 IMAGES_DIR = os.getenv('IMAGES_DIR', './images')
 PHOTO_COOLDOWN = float(os.getenv('PHOTO_COOLDOWN', '5.0'))
 
+# Metrics config
+METRICS_INTERVAL = float(os.getenv('METRICS_INTERVAL', '10.0'))  # Send metrics every 10 seconds
+
 TOPIC_NAME = "bird-data"
 
 KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'kafka-2a015ed7-bird-feeder-free-tier.d.aivencloud.com:19448')
@@ -186,6 +189,19 @@ class BirdFeeder:
         self.approach_time = None
         self.last_photo_time = None
         
+        # Metrics tracking
+        self.metrics_counter = {
+            'messages': 0,
+            'bytes': 0,
+            'last_sent': time.time()
+        }
+        
+        # Start metrics thread
+        self.metrics_running = True
+        self.metrics_thread = threading.Thread(target=self._metrics_loop, daemon=True)
+        self.metrics_thread.start()
+        print(f"✓ Metrics thread started (interval: {METRICS_INTERVAL}s)")
+        
         Path(IMAGES_DIR).mkdir(exist_ok=True)
         
         print("Initializing camera...")
@@ -211,10 +227,78 @@ class BirdFeeder:
             self.prev_frame = None
             print("Motion detection ready! Waiting for birds...")
     
+    def _metrics_loop(self):
+        """Background thread to send metrics periodically"""
+        while self.metrics_running:
+            try:
+                time.sleep(METRICS_INTERVAL)
+                self.send_metrics()
+            except Exception as e:
+                print(f"Error in metrics loop: {e}")
+                import traceback
+                traceback.print_exc()
+    
+    def send_to_kafka(self, topic, data_dict):
+        """Unified Kafka send with metrics tracking"""
+        try:
+            message = json.dumps(data_dict)
+            message_bytes = message.encode('utf-8')
+            
+            future = producer.send(topic, message_bytes)
+            # Wait for confirmation
+            record_metadata = future.get(timeout=10)
+            
+            # print(f"✓ Sent to {topic}: offset={record_metadata.offset}, partition={record_metadata.partition}")
+            
+            # Track metrics
+            self.metrics_counter['messages'] += 1
+            self.metrics_counter['bytes'] += len(message_bytes)
+            
+        except Exception as e:
+            print(f"✗ FAILED to send to {topic}: {e}")
+    
+    def send_metrics(self):
+        """Send aggregated metrics to Kafka"""
+        elapsed = time.time() - self.metrics_counter['last_sent']
+        
+        if elapsed == 0:
+            return
+        
+        metrics = {
+            'userId': USER_ID,
+            'location': FEEDER_LOCATION if FEEDER_LOCATION else None,
+            'messagesPerSec': round(self.metrics_counter['messages'] / elapsed, 2),
+            'bytesPerSec': round(self.metrics_counter['bytes'] / elapsed, 2),
+            'kbPerSec': round((self.metrics_counter['bytes'] / 1024) / elapsed, 2),
+            'totalMessages': self.metrics_counter['messages'],
+            'totalBytes': self.metrics_counter['bytes'],
+            'windowSeconds': round(elapsed, 2),
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Send metrics without tracking (to avoid recursion)
+        message = json.dumps(metrics)
+        producer.send('metrics', message.encode('utf-8'))
+        
+        print(f"📊 Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s")
+        
+        # Reset counters
+        self.metrics_counter = {
+            'messages': 0,
+            'bytes': 0,
+            'last_sent': time.time()
+        }
+    
     def read_sensors(self):
         weight = self.get_weight()
         motion = self.detect_motion() if MOTION_ENABLED else 0
         current_time = time.time()
+
+        # Send raw data to Kafka
+        if SCALE_ENABLED and weight is not None:
+            self.send_weight_data_to_kafka(weight, datetime.now())
+        if MOTION_ENABLED:
+            self.send_motion_data_to_kafka(motion, datetime.now())
         
         # Determine detection state
         motion_detected = motion > MOTION_THRESHOLD
@@ -235,14 +319,14 @@ class BirdFeeder:
                     self.bird_present = True
                     self.bird_approaching = False
                     self.no_motion_frames = 0
-                    self.on_bird_landed(weight, "motion-only")
+                    self.on_bird_landed("motion-only")
             
             # Weight detected (with or without motion)
             elif weight_detected and not self.bird_present:
                 self.bird_present = True
                 self.bird_approaching = False
                 self.no_motion_frames = 0
-                self.on_bird_landed(weight, "scale")
+                self.on_bird_landed("scale")
             
             # Bird present, check if it left
             elif self.bird_present:
@@ -264,7 +348,7 @@ class BirdFeeder:
                 self.bird_present = True
                 self.no_motion_frames = 0
                 detection_type = "scale" if SCALE_ENABLED else "motion"
-                self.on_bird_landed(weight, detection_type)
+                self.on_bird_landed(detection_type)
             
             elif not bird_detected and self.bird_present:
                 self.no_motion_frames += 1
@@ -278,6 +362,16 @@ class BirdFeeder:
 
     def cleanAndExit(self):
         print("Cleaning...")
+        
+        # Stop metrics thread
+        self.metrics_running = False
+        if hasattr(self, 'metrics_thread'):
+            self.metrics_thread.join(timeout=2)
+        
+        # Send final metrics before closing
+        if self.metrics_counter['messages'] > 0:
+            self.send_metrics()
+        
         self.cap.release()
         producer.close()
         
@@ -360,25 +454,43 @@ class BirdFeeder:
 
                 if ENABLE_CLOUD_UPLOAD:
                     self.upload_to_cloud(filepath, filename, weight, detection_type, timestamp)
-                    self.send_data_to_kafka(weight, detection_type, datetime.now())
+                    self.send_bird_data_to_kafka(weight, detection_type, datetime.now())
                 
                 print(f"Photo: {filename}")
                 self.last_photo_time = current_time
                 return True
         return False
     
-    def send_data_to_kafka(self, weight, detection_type, timestamp):
-        """Send data to Kafka topic"""
-        message = json.dumps({
+    def send_bird_data_to_kafka(self, weight, detection_type, timestamp):
+        """Send bird detection data to Kafka topic"""
+        data = {
             'userId': USER_ID,
-            'weight': weight,
+            'weight': float(weight) if weight is not None else None,
             'detectionType': detection_type,
             'timestamp': timestamp.isoformat(),
             'location': FEEDER_LOCATION if FEEDER_LOCATION else None
-        })
+        }
+        self.send_to_kafka(TOPIC_NAME, data)
+    
+    def send_weight_data_to_kafka(self, weight, timestamp):
+        """Send weight data to Kafka topic"""
+        data = {
+            'userId': USER_ID,
+            'weight': float(weight) if weight is not None else None,
+            'timestamp': timestamp.isoformat(),
+            'location': FEEDER_LOCATION if FEEDER_LOCATION else None
+        }
+        self.send_to_kafka("weight", data)
 
-        producer.send(TOPIC_NAME, message.encode('utf-8'))
-
+    def send_motion_data_to_kafka(self, motion, timestamp):
+        """Send motion data to Kafka topic"""
+        data = {
+            'userId': USER_ID,
+            'motion': int(motion),  # Convert numpy int64 to Python int
+            'timestamp': timestamp.isoformat(),
+            'location': FEEDER_LOCATION if FEEDER_LOCATION else None
+        }
+        self.send_to_kafka("motion", data)
 
     def upload_to_cloud(self, filepath, filename, weight, detection_type, timestamp):
         """Upload photo to Cloudflare Images"""
@@ -417,8 +529,10 @@ class BirdFeeder:
         except Exception as e:
             print(f"Cloud upload error: {e}")
 
-    def on_bird_landed(self, weight, detection_type):
+    def on_bird_landed(self, detection_type):
         """Called when a bird lands. detection_type: 'scale', 'motion', or 'motion-only'"""
+        time.sleep(1)
+        weight = self.get_weight()
         timestamp = datetime.now()
         weight_str = f"{weight:.2f}g" if weight is not None else "N/A"
         print(f"Bird landed at {timestamp.isoformat()}! Weight: {weight_str} (detected by: {detection_type})")

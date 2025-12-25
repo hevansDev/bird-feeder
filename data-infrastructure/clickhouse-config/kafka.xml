@@ -1,0 +1,8 @@
+<clickhouse>
+    <kafka>
+        <security_protocol>ssl</security_protocol>
+        <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+        <ssl_certificate_location>/etc/clickhouse/certs/service.cert</ssl_certificate_location>
+        <ssl_key_location>/etc/clickhouse/certs/service.key</ssl_key_location>
+    </kafka>
+</clickhouse>
