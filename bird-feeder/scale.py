@@ -1,7 +1,8 @@
 import time
 import serial
 from queue import Queue
-import HX711
+import hx711 as HX711
+from datetime import datetime
 import threading
 
 class DirectWeightSensor:
