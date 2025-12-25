@@ -19,6 +19,8 @@ import threading
 
 from scale import SerialWeightSensor, DirectWeightSensor
 
+from scale import SerialWeightSensor, DirectWeightSensor
+
 from confluent_kafka import Producer
 
 # Load environment variables - try .env.local first, fall back to .env
@@ -121,10 +123,7 @@ class BirdFeeder:
                 self.scale = SerialWeightSensor(PICO_SERIAL_PORT, PICO_SERIAL_BAUD, PICO_TIMEOUT)
             else:  # direct
                 self.scale = DirectWeightSensor(reference_unit=SCALE_REFERENCE_UNIT)
-            
-            # Tare on startup
-            print("Taring scale...")
-            self.scale.tare()
+                
         
         if MOTION_ENABLED:
             self.prev_frame = None
@@ -406,16 +405,12 @@ class BirdFeeder:
 
     def on_bird_landed(self, detection_type):
         """Called when a bird lands. detection_type: 'scale', 'motion', or 'motion-only'"""
-        time.sleep(STABLE_WAIT_TIME)  # Wait a moment for stable reading
+        time.sleep(1)
         weight = self.scale.get_weight()
-        if weight is not None and weight > WEIGHT_THRESHOLD:
-            weight = self.scale.get_weight()
-            timestamp = datetime.now()
-            weight_str = f"{weight:.2f}g" if weight is not None else "N/A"
-            print(f"Bird landed at {timestamp.isoformat()}! Weight: {weight_str} (detected by: {detection_type})")
-            self.take_photo(weight, detection_type)
-        else:
-            print(f"Weight didn't stabilize above threshold after {STABLE_WAIT_TIME} seconds, ignoring.")
+        timestamp = datetime.now()
+        weight_str = f"{weight:.2f}g" if weight is not None else "N/A"
+        print(f"Bird landed at {timestamp.isoformat()}! Weight: {weight_str} (detected by: {detection_type})")
+        self.take_photo(weight, detection_type)
 
     def on_bird_left(self):
         """Called when a bird leaves the feeder"""
