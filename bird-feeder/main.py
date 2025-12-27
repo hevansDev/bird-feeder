@@ -58,8 +58,6 @@ PHOTO_COOLDOWN = float(os.getenv('PHOTO_COOLDOWN', '5.0'))
 # Metrics config
 METRICS_INTERVAL = float(os.getenv('METRICS_INTERVAL', '10.0'))  # Send metrics every 10 seconds
 
-TOPIC_NAME = "bird-data"
-
 KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'kafka-2a015ed7-bird-feeder-free-tier.d.aivencloud.com:19448')
 
 producer = KafkaProducer(
@@ -68,7 +66,7 @@ producer = KafkaProducer(
     ssl_cafile="ca.pem",
     ssl_certfile="service.cert",
     ssl_keyfile="service.key",
-    api_version=(3, 9, 0),
+    api_version=(3, 9, 1),
 )
 
 class BirdFeeder:
@@ -324,7 +322,7 @@ class BirdFeeder:
             'timestamp': timestamp.isoformat(),
             'location': FEEDER_LOCATION if FEEDER_LOCATION else None
         }
-        self.send_to_kafka(TOPIC_NAME, data)
+        self.send_to_kafka("bird-data", data)
     
     def send_weight_data_to_kafka(self, weight, timestamp):
         """Send weight data to Kafka topic"""
