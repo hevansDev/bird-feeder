@@ -68,6 +68,7 @@ producer = KafkaProducer(
     ssl_cafile="ca.pem",
     ssl_certfile="service.cert",
     ssl_keyfile="service.key",
+    api_version=(3, 9, 0),
 )
 
 class BirdFeeder:
