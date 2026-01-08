@@ -58,7 +58,7 @@ PHOTO_COOLDOWN = float(os.getenv('PHOTO_COOLDOWN', '5.0'))
 # Metrics config
 METRICS_INTERVAL = float(os.getenv('METRICS_INTERVAL', '10.0'))  # Send metrics every 10 seconds
 
-KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'bird-feeder-bird-feeder.j.aivencloud.com:13867')
+KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'bird-feeder-bird-feeder.h.aivencloud.com:13867')
 
 producer = KafkaProducer(
     bootstrap_servers=KAFKA_BROKER_URL,
