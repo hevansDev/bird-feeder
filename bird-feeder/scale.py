@@ -44,7 +44,7 @@ class SerialWeightSensor:
         self.connected = False
         self.reader_thread = None
         self.running = False
-        
+        self.tare_confirmed = threading.Event()
         self.connect()
     
     def connect(self):
@@ -96,16 +96,17 @@ class SerialWeightSensor:
                         except ValueError:
                             pass
                     
+                    elif line.startswith("TARED"):
+                        print(f"Pico: Scale tared - {line}")
+                        self.tare_confirmed.set()  # Signal tare() that we're done
+                    
+                    elif line == "TARING":
+                        print("Pico: Taring scale...")
+                    
                     elif line.startswith("ERROR:"):
                         error = line.split(":")[1]
                         if error != "NO_READING":
                             print(f"Pico error: {error}")
-                    
-                    elif line == "TARED":
-                        print("Pico: Scale tared successfully")
-                    
-                    elif line == "TARING":
-                        print("Pico: Taring scale...")
                 
                 time.sleep(0.01)
                 
@@ -120,16 +121,12 @@ class SerialWeightSensor:
     def tare(self):
         """Send tare command to Pico"""
         if self.serial and self.serial.is_open:
+            self.tare_confirmed.clear()
             self.serial.write(b'TARE\n')
-            # Wait for confirmation
-            start_time = time.time()
-            while time.time() - start_time < 2:
-                if self.serial.in_waiting:
-                    line = self.serial.readline().decode('utf-8').strip()
-                    if line.startswith("TARED:"):
-                        print(f"Scale tared: {line}")
-                        return True
-                time.sleep(0.1)
+            # Wait for reader thread to see TARED response
+            if self.tare_confirmed.wait(timeout=2.0):
+                return True
+            print("Warning: Tare confirmation timeout")
         return False
     
     def close(self):
