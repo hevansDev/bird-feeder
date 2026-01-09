@@ -103,6 +103,10 @@ class BirdFeeder:
                 self.scale = SerialWeightSensor(PICO_SERIAL_PORT, PICO_SERIAL_BAUD, PICO_TIMEOUT)
             else:  # direct
                 self.scale = DirectWeightSensor(reference_unit=SCALE_REFERENCE_UNIT)
+            
+            # Tare on startup
+            print("Taring scale...")
+            self.scale.tare()
         
         if MOTION_ENABLED:
             self.prev_frame = None
