@@ -1,11 +1,17 @@
 from hx711 import hx711
 from machine import Pin
 import time
+import sys
+import select
 
 # HX711 Configuration
 CLOCK_PIN = 14
 DATA_PIN = 15
 CALIBRATION_FACTOR = -284.254040
+
+# Set up polling for stdin
+poll = select.poll()
+poll.register(sys.stdin, select.POLLIN)
 
 def take_reading(hx, samples=5):
     """Take multiple readings and return average"""
@@ -16,6 +22,12 @@ def take_reading(hx, samples=5):
             readings.append(val)
         time.sleep(0.02)
     return sum(readings) / len(readings) if readings else None
+
+def check_for_command():
+    """Check if there's a command waiting on stdin (non-blocking)"""
+    if poll.poll(0):  # 0 = non-blocking
+        return sys.stdin.readline().strip()
+    return None
 
 def main():
     # Initialize HX711
@@ -36,27 +48,24 @@ def main():
     
     print("READY")
     
-    consecutive_readings = 0
-    
     while True:
         try:
+            # Check for commands from Pi
+            cmd = check_for_command()
+            if cmd == "TARE":
+                print("TARING")
+                new_tare = take_reading(hx, samples=10)
+                if new_tare:
+                    tare_value = new_tare
+                    print(f"TARED:{tare_value:.2f}")
+                else:
+                    print("ERROR:TARE_FAILED")
+            
             # Get raw reading
             raw = hx.get_value()
-            consecutive_readings += 1
             if raw is not None:
-                # Calculate weight
                 weight = (raw - tare_value) / CALIBRATION_FACTOR
-                
-                # Print weight (always)
                 print(f"WEIGHT:{weight:.2f}")
-                
-                # Auto-tare on negative values
-                if (weight < -1.0) or (consecutive_readings >= 100):
-                    print("AUTO_TARE")
-                    tare_value = take_reading(hx, samples=10)
-                    if tare_value:
-                        print(f"TARED:{tare_value:.2f}")
-                        consecutive_readings = 0
             else:
                 print("ERROR:NO_READING")
         
