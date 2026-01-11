@@ -1,0 +1,19 @@
+[Unit]
+Description=Bird Feeder Monitoring Script
+After=network.target
+
+[Service]
+Type=simple
+User=hugh
+WorkingDirectory=/home/hugh/bird-feeder/bird-feeder
+ExecStart=/home/hugh/bird-feeder/bird-feeder/.venv/bin/python -u /home/hugh/bir>
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/hugh/logs/birdfeeder.log
+StandardError=append:/home/hugh/logs/birdfeeder.error.log
+
+# Restart every hour
+RuntimeMaxSec=3600
+
+[Install]
+WantedBy=multi-user.target
