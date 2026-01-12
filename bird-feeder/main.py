@@ -39,6 +39,7 @@ SCALE_REFERENCE_UNIT = float(os.getenv('SCALE_REFERENCE_UNIT', '-388.929792'))
 
 # Scale type: 'direct' for HX711 connected to Pi GPIO, 'serial' for Pico over USB
 SCALE_TYPE = os.getenv('SCALE_TYPE', 'serial')  # 'direct' or 'serial'
+STABLE_WAIT_TIME = float(os.getenv('STABLE_WAIT_TIME', '1.0'))  # Time to wait for stable weight after bird lands
 
 # Serial Pico config
 PICO_SERIAL_PORT = os.getenv('PICO_SERIAL_PORT', '/dev/ttyACM0')
@@ -387,12 +388,16 @@ class BirdFeeder:
 
     def on_bird_landed(self, detection_type):
         """Called when a bird lands. detection_type: 'scale', 'motion', or 'motion-only'"""
-        time.sleep(0.5) # Brief wait to stabilize readings
-        weight = self.scale.get_weight()
-        timestamp = datetime.now()
-        weight_str = f"{weight:.2f}g" if weight is not None else "N/A"
-        print(f"Bird landed at {timestamp.isoformat()}! Weight: {weight_str} (detected by: {detection_type})")
-        self.take_photo(weight, detection_type)
+        time.sleep(STABLE_WAIT_TIME)  # Wait a moment for stable reading
+        if detection_type == "scale" and self.get_weight() > WEIGHT_THRESHOLD:
+            weight = self.get_weight()
+            timestamp = datetime.now()
+            weight_str = f"{weight:.2f}g" if weight is not None else "N/A"
+            print(f"Bird landed at {timestamp.isoformat()}! Weight: {weight_str} (detected by: {detection_type})")
+            self.take_photo(weight, detection_type)
+        else:
+            print(f"Weight didn't stabilize above threshold after {STABLE_WAIT_TIME} seconds, ignoring.")
+
 
     def on_bird_left(self):
         """Called when a bird leaves the feeder"""
