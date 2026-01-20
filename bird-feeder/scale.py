@@ -73,6 +73,10 @@ class SerialWeightSensor:
                         self.connected = True
                         break
                 time.sleep(0.1)
+        except Exception as e:
+            print(f"Failed to connect to Pico: {e}")
+            self.connected = False
+            raise
     
     def _read_loop(self):
         """Background thread to continuously read weight from serial"""
