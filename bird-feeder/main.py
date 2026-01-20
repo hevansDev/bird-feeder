@@ -166,7 +166,9 @@ class BirdFeeder:
         message = json.dumps(metrics)
         producer.send('metrics', message.encode('utf-8'))
         
-        print(f"📊 Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s")
+        weight = self.scale.get_weight()
+        weight_str = f"{weight:.2f}" if weight is not None else "N/A"
+        print(f"📊 Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s, {weight_str}")
         
         # Reset counters
         self.metrics_counter = {
@@ -390,7 +392,8 @@ class BirdFeeder:
     def on_bird_landed(self, detection_type):
         """Called when a bird lands. detection_type: 'scale', 'motion', or 'motion-only'"""
         time.sleep(STABLE_WAIT_TIME)  # Wait a moment for stable reading
-        if self.scale.get_weight() > WEIGHT_THRESHOLD:
+        weight = self.scale.get_weight()
+        if weight is not None and weight > WEIGHT_THRESHOLD:
             weight = self.scale.get_weight()
             timestamp = datetime.now()
             weight_str = f"{weight:.2f}g" if weight is not None else "N/A"
