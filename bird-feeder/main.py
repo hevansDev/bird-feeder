@@ -63,6 +63,7 @@ METRICS_INTERVAL = float(os.getenv('METRICS_INTERVAL', '10.0'))  # Send metrics 
 
 KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'bird-feeder2-bird-feeder.i.aivencloud.com:13867')
 
+import time
 
 def create_producer(retries=5, delay=10):
     for attempt in range(retries):
