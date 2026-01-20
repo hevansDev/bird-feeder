@@ -408,7 +408,8 @@ class BirdFeeder:
     def on_bird_landed(self, detection_type):
         """Called when a bird lands. detection_type: 'scale', 'motion', or 'motion-only'"""
         time.sleep(STABLE_WAIT_TIME)  # Wait a moment for stable reading
-        if self.scale.get_weight() > WEIGHT_THRESHOLD:
+        weight = self.scale.get_weight()
+        if weight is not None and weight > WEIGHT_THRESHOLD:
             weight = self.scale.get_weight()
             timestamp = datetime.now()
             weight_str = f"{weight:.2f}g" if weight is not None else "N/A"
