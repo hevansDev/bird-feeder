@@ -61,14 +61,28 @@ METRICS_INTERVAL = float(os.getenv('METRICS_INTERVAL', '10.0'))  # Send metrics 
 
 KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'bird-feeder-bird-feeder.h.aivencloud.com:13867')
 
-producer = KafkaProducer(
-    bootstrap_servers=KAFKA_BROKER_URL,
-    security_protocol="SSL",
-    ssl_cafile="ca.pem",
-    ssl_certfile="service.cert",
-    ssl_keyfile="service.key",
-    api_version=(3, 9, 1),
-)
+import time
+
+def create_producer(retries=5, delay=10):
+    for attempt in range(retries):
+        try:
+            p = KafkaProducer(
+                bootstrap_servers=KAFKA_BROKER_URL,
+                security_protocol="SSL",
+                ssl_cafile="ca.pem",
+                ssl_certfile="service.cert",
+                ssl_keyfile="service.key",
+                api_version=(4, 1, 1),
+            )
+            print("✓ Kafka producer connected")
+            return p
+        except Exception as e:
+            print(f"Kafka connection attempt {attempt+1}/{retries} failed: {e}")
+            if attempt < retries - 1:
+                time.sleep(delay)
+    raise RuntimeError("Failed to connect to Kafka after retries")
+
+producer = create_producer()
 
 class BirdFeeder:
     def __init__(self):
