@@ -51,11 +51,16 @@ class SerialWeightSensor:
         """Connect to Pico serial port"""
         try:
             print(f"Connecting to Pico on {self.port}...")
-            self.serial = serial.Serial(self.port, self.baudrate, timeout=1.0)
-            time.sleep(2)  # Wait for Pico to initialize
+            self.serial = serial.Serial()
+            self.serial.port = self.port
+            self.serial.baudrate = self.baudrate
+            self.serial.timeout = 1.0
+            self.serial.dtr = False  # Prevent reset on connect
+            self.serial.open()
             
-            # Clear any startup messages
-            self.serial.reset_input_buffer()
+            # Don't clear the buffer - we want to catch whatever the Pico sends
+            # time.sleep(2)  # Remove or reduce this
+            # self.serial.reset_input_buffer()  # Remove this
             
             # Wait for any valid message from Pico
             start_time = time.time()
@@ -63,24 +68,11 @@ class SerialWeightSensor:
                 if self.serial.in_waiting:
                     line = self.serial.readline().decode('utf-8').strip()
                     print(f"DEBUG: Received from Pico: '{line}'")
-                    if line.startswith("WEIGHT:") or line.startswith("TARED") or line == "READY" or line == "TARING":
+                    if line.startswith("WEIGHT:") or line.startswith("TARED") or line == "READY" or line.startswith("TARING"):
                         print("Pico weight sensor ready!")
                         self.connected = True
                         break
                 time.sleep(0.1)
-
-            if not self.connected:
-                raise RuntimeError("Pico didn't send any data")
-            
-            # Start reader thread
-            self.running = True
-            self.reader_thread = threading.Thread(target=self._read_loop, daemon=True)
-            self.reader_thread.start()
-            
-        except Exception as e:
-            print(f"Failed to connect to Pico: {e}")
-            self.connected = False
-            raise
     
     def _read_loop(self):
         """Background thread to continuously read weight from serial"""
