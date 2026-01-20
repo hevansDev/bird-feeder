@@ -57,13 +57,13 @@ class SerialWeightSensor:
             # Clear any startup messages
             self.serial.reset_input_buffer()
             
-            # Wait for WEIGHT messages (Pico may have already sent READY)
+            # Wait for any valid message from Pico
             start_time = time.time()
-            while time.time() - start_time < 3:
+            while time.time() - start_time < 5:
                 if self.serial.in_waiting:
                     line = self.serial.readline().decode('utf-8').strip()
                     print(f"DEBUG: Received from Pico: '{line}'")
-                    if line == "READY" or line.startswith("WEIGHT:") or line.startswith("TARED"):
+                    if line.startswith("WEIGHT:") or line.startswith("TARED") or line == "READY" or line == "TARING":
                         print("Pico weight sensor ready!")
                         self.connected = True
                         break
