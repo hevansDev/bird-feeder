@@ -73,8 +73,11 @@ def create_producer(retries=5, delay=10):
                 ssl_certfile="service.cert",
                 ssl_keyfile="service.key",
                 api_version=(4, 1, 1),
+                request_timeout_ms=30000,
+                metadata_max_age_ms=60000,
             )
-            print("✓ Kafka producer connected")
+            time.sleep(5)  # Allow metadata fetch to complete
+            print(f"✓ Kafka producer connected")
             return p
         except Exception as e:
             print(f"Kafka connection attempt {attempt+1}/{retries} failed: {e}")
