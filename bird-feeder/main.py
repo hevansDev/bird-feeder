@@ -19,7 +19,7 @@ import threading
 
 from scale import SerialWeightSensor, DirectWeightSensor
 
-from kafka import KafkaProducer
+from confluent_kafka import Producer
 
 # Load environment variables - try .env.local first, fall back to .env
 if os.path.exists('.env.local'):
@@ -59,25 +59,23 @@ PHOTO_COOLDOWN = float(os.getenv('PHOTO_COOLDOWN', '5.0'))
 # Metrics config
 METRICS_INTERVAL = float(os.getenv('METRICS_INTERVAL', '10.0'))  # Send metrics every 10 seconds
 
-KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'bird-feeder-bird-feeder.h.aivencloud.com:13867')
+KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'bird-feeder2-bird-feeder.i.aivencloud.com:13867')
 
-import time
 
 def create_producer(retries=5, delay=10):
     for attempt in range(retries):
         try:
-            p = KafkaProducer(
-                bootstrap_servers=KAFKA_BROKER_URL,
-                security_protocol="SSL",
-                ssl_cafile="ca.pem",
-                ssl_certfile="service.cert",
-                ssl_keyfile="service.key",
-                api_version=(4, 1, 1),
-                request_timeout_ms=60000,
-                metadata_max_age_ms=60000,
-            )
-            # Force metadata fetch by checking partitions
-            p.partitions_for('weight')
+            p = Producer({
+                'bootstrap.servers': KAFKA_BROKER_URL,
+                'security.protocol': 'ssl',
+                'ssl.ca.location': 'ca.pem',
+                'ssl.certificate.location': 'service.cert',
+                'ssl.key.location': 'service.key',
+            })
+            # Force metadata fetch by flushing a no-op poll
+            p.poll(0)
+            # Verify connectivity by fetching metadata
+            p.list_topics(timeout=30)
             print("✓ Kafka producer connected and metadata fetched")
             return p
         except Exception as e:
@@ -148,17 +146,14 @@ class BirdFeeder:
         try:
             message = json.dumps(data_dict)
             message_bytes = message.encode('utf-8')
-            
-            future = producer.send(topic, message_bytes)
-            # Wait for confirmation
-            record_metadata = future.get(timeout=10)
-            
-            # print(f"✓ Sent to {topic}: offset={record_metadata.offset}, partition={record_metadata.partition}")
-            
+
+            producer.produce(topic, message_bytes)
+            producer.poll(0)  # Trigger delivery callbacks without blocking
+
             # Track metrics
             self.metrics_counter['messages'] += 1
             self.metrics_counter['bytes'] += len(message_bytes)
-            
+
         except Exception as e:
             print(f"✗ FAILED to send to {topic}: {e}")
     
@@ -183,8 +178,9 @@ class BirdFeeder:
         
         # Send metrics without tracking (to avoid recursion)
         message = json.dumps(metrics)
-        producer.send('metrics', message.encode('utf-8'))
-        
+        producer.produce('metrics', message.encode('utf-8'))
+        producer.poll(0)
+
         weight = self.scale.get_weight()
         weight_str = f"{weight:.2f}" if weight is not None else "N/A"
         print(f"📊 Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s, {weight_str}")
@@ -280,7 +276,7 @@ class BirdFeeder:
             self.send_metrics()
         
         self.cap.release()
-        producer.close()
+        producer.flush(10)  # Wait up to 10s for queued messages to deliver
         
         if SCALE_ENABLED:
             if SCALE_TYPE == 'serial':
@@ -420,7 +416,6 @@ class BirdFeeder:
             self.take_photo(weight, detection_type)
         else:
             print(f"Weight didn't stabilize above threshold after {STABLE_WAIT_TIME} seconds, ignoring.")
-
 
     def on_bird_left(self):
         """Called when a bird leaves the feeder"""
