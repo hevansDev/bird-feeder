@@ -179,7 +179,7 @@ async function serveGallery(env) {
     <head>
       <title>Bird Feeder Gallery</title>
       <link rel="icon" type="image/x-icon" href="https://hughevans.dev/favicon.ico">
-      <script defer src="https://umami.hughevans.dev/script.js" data-website-id="518b3fb7-378f-4bb7-99aa-659f7825b457"></script>
+      <script defer src="https://stats.hughevans.dev/script.js" data-website-id="518b3fb7-378f-4bb7-99aa-659f7825b457"></script>
       <meta name="viewport" content="width=device-width, initial-scale=1">
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
