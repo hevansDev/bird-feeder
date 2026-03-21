@@ -1,3 +1,10 @@
+# TODO
+# Modular refactor into multiple files
+# Don't save images locally if cloud upload enabled
+# Manage process with systemd
+# Add logging instead of print statements
+# Simplify taring and serial scale logic
+
 import cv2
 import sys
 import time
@@ -8,12 +15,11 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 from pathlib import Path
-
-import serial
 import threading
-from queue import Queue
 
-from kafka import KafkaProducer
+from scale import SerialWeightSensor, DirectWeightSensor
+
+from confluent_kafka import Producer
 
 # Load environment variables - try .env.local first, fall back to .env
 if os.path.exists('.env.local'):
@@ -33,7 +39,7 @@ SCALE_REFERENCE_UNIT = float(os.getenv('SCALE_REFERENCE_UNIT', '-388.929792'))
 
 # Scale type: 'direct' for HX711 connected to Pi GPIO, 'serial' for Pico over USB
 SCALE_TYPE = os.getenv('SCALE_TYPE', 'serial')  # 'direct' or 'serial'
-STABLE_WAIT_TIME = float(os.getenv('STABLE_WAIT_TIME', '0.5'))  # Seconds to wait for stable weight
+STABLE_WAIT_TIME = float(os.getenv('STABLE_WAIT_TIME', '1.0'))  # Time to wait for stable weight after bird lands
 
 # Serial Pico config
 PICO_SERIAL_PORT = os.getenv('PICO_SERIAL_PORT', '/dev/ttyACM0')
@@ -53,134 +59,33 @@ PHOTO_COOLDOWN = float(os.getenv('PHOTO_COOLDOWN', '5.0'))
 # Metrics config
 METRICS_INTERVAL = float(os.getenv('METRICS_INTERVAL', '10.0'))  # Send metrics every 10 seconds
 
-TOPIC_NAME = "bird-data"
+KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'bird-feeder2-bird-feeder.i.aivencloud.com:13867')
 
-KAFKA_BROKER_URL = os.getenv('KAFKA_BROKER_URL', 'kafka-2a015ed7-bird-feeder-free-tier.d.aivencloud.com:19448')
 
-producer = KafkaProducer(
-    bootstrap_servers=KAFKA_BROKER_URL,
-    security_protocol="SSL",
-    ssl_cafile="ca.pem",
-    ssl_certfile="service.cert",
-    ssl_keyfile="service.key",
-)
-
-# Import scale library only if needed for direct connection
-if SCALE_ENABLED and SCALE_TYPE == 'direct':
-    try:
-        import RPi.GPIO as GPIO
-        from hx711 import HX711
-    except ImportError:
-        print("Warning: Scale enabled but RPi.GPIO/HX711 not available")
-        SCALE_ENABLED = False
-
-class SerialWeightSensor:
-    """Interface for Pico weight sensor over serial USB"""
-    
-    def __init__(self, port, baudrate=115200, timeout=2.0):
-        self.port = port
-        self.baudrate = baudrate
-        self.serial = None
-        self.latest_weight = None
-        self.connected = False
-        self.reader_thread = None
-        self.running = False
-        
-        self.connect()
-    
-    def connect(self):
-        """Connect to Pico serial port"""
+def create_producer(retries=5, delay=10):
+    for attempt in range(retries):
         try:
-            print(f"Connecting to Pico on {self.port}...")
-            self.serial = serial.Serial(self.port, self.baudrate, timeout=1.0)
-            time.sleep(2)  # Wait for Pico to initialize
-            
-            # Clear any startup messages
-            self.serial.reset_input_buffer()
-            
-            # Wait for WEIGHT messages (Pico may have already sent READY)
-            start_time = time.time()
-            while time.time() - start_time < 3:
-                if self.serial.in_waiting:
-                    line = self.serial.readline().decode('utf-8').strip()
-                    print(f"DEBUG: Received from Pico: '{line}'")
-                    if line == "READY" or line.startswith("WEIGHT:") or line.startswith("TARED"):
-                        print("Pico weight sensor ready!")
-                        self.connected = True
-                        break
-                time.sleep(0.1)
-
-            if not self.connected:
-                raise RuntimeError("Pico didn't send any data")
-            
-            # Start reader thread
-            self.running = True
-            self.reader_thread = threading.Thread(target=self._read_loop, daemon=True)
-            self.reader_thread.start()
-            
+            p = Producer({
+                'bootstrap.servers': KAFKA_BROKER_URL,
+                'security.protocol': 'ssl',
+                'ssl.ca.location': 'ca.pem',
+                'ssl.certificate.location': 'service.cert',
+                'ssl.key.location': 'service.key',
+            })
+            # Force metadata fetch by flushing a no-op poll
+            p.poll(0)
+            # Verify connectivity by fetching metadata
+            p.list_topics(timeout=30)
+            print("✓ Kafka producer connected and metadata fetched")
+            return p
         except Exception as e:
-            print(f"Failed to connect to Pico: {e}")
-            self.connected = False
-            raise
-    
-    def _read_loop(self):
-        """Background thread to continuously read weight from serial"""
-        while self.running:
-            try:
-                if self.serial.in_waiting:
-                    line = self.serial.readline().decode('utf-8').strip()
-                    
-                    if line.startswith("WEIGHT:"):
-                        try:
-                            weight = float(line.split(":")[1])
-                            self.latest_weight = weight
-                        except ValueError:
-                            pass
-                    
-                    elif line.startswith("ERROR:"):
-                        error = line.split(":")[1]
-                        if error != "NO_READING":
-                            print(f"Pico error: {error}")
-                    
-                    elif line == "TARED":
-                        print("Pico: Scale tared successfully")
-                    
-                    elif line == "TARING":
-                        print("Pico: Taring scale...")
-                
-                time.sleep(0.01)
-                
-            except Exception as e:
-                print(f"Serial read error: {e}")
-                time.sleep(0.1)
-    
-    def get_weight(self):
-        """Get latest weight reading"""
-        return self.latest_weight
-    
-    def tare(self):
-        """Send tare command to Pico"""
-        if self.serial and self.serial.is_open:
-            self.serial.write(b'TARE\n')
-            # Wait for confirmation
-            start_time = time.time()
-            while time.time() - start_time < 2:
-                if self.serial.in_waiting:
-                    line = self.serial.readline().decode('utf-8').strip()
-                    if line.startswith("TARED:"):
-                        print(f"Scale tared: {line}")
-                        return True
-                time.sleep(0.1)
-        return False
-    
-    def close(self):
-        """Clean shutdown of serial connection"""
-        self.running = False
-        if self.reader_thread:
-            self.reader_thread.join(timeout=1)
-        if self.serial:
-            self.serial.close()
-        print("Serial connection closed")
+            print(f"Kafka connection attempt {attempt+1}/{retries} failed: {e}")
+            if attempt < retries - 1:
+                time.sleep(delay)
+    raise RuntimeError("Failed to connect to Kafka after all retries")
+
+producer = create_producer()
+
 
 class BirdFeeder:
     def __init__(self):
@@ -213,16 +118,13 @@ class BirdFeeder:
         # Initialize scale based on type
         if SCALE_ENABLED:
             if SCALE_TYPE == 'serial':
-                print("Initializing Pico serial weight sensor...")
                 self.scale = SerialWeightSensor(PICO_SERIAL_PORT, PICO_SERIAL_BAUD, PICO_TIMEOUT)
             else:  # direct
-                print("Initializing direct HX711 scale...")
-                self.hx = HX711(5, 6)
-                self.hx.set_reading_format("MSB", "MSB")
-                self.hx.set_reference_unit(SCALE_REFERENCE_UNIT)
-                self.hx.reset()
-                self.hx.tare()
-                print("Scale tared! Waiting for birds...")
+                self.scale = DirectWeightSensor(reference_unit=SCALE_REFERENCE_UNIT)
+            
+            # Tare on startup
+            print("Taring scale...")
+            self.scale.tare()
         
         if MOTION_ENABLED:
             self.prev_frame = None
@@ -244,17 +146,14 @@ class BirdFeeder:
         try:
             message = json.dumps(data_dict)
             message_bytes = message.encode('utf-8')
-            
-            future = producer.send(topic, message_bytes)
-            # Wait for confirmation
-            record_metadata = future.get(timeout=10)
-            
-            # print(f"✓ Sent to {topic}: offset={record_metadata.offset}, partition={record_metadata.partition}")
-            
+
+            producer.produce(topic, message_bytes)
+            producer.poll(0)  # Trigger delivery callbacks without blocking
+
             # Track metrics
             self.metrics_counter['messages'] += 1
             self.metrics_counter['bytes'] += len(message_bytes)
-            
+
         except Exception as e:
             print(f"✗ FAILED to send to {topic}: {e}")
     
@@ -279,9 +178,12 @@ class BirdFeeder:
         
         # Send metrics without tracking (to avoid recursion)
         message = json.dumps(metrics)
-        producer.send('metrics', message.encode('utf-8'))
-        
-        print(f"📊 Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s")
+        # producer.produce('metrics', message.encode('utf-8'))
+        # producer.poll(0)
+
+        # weight = self.scale.get_weight()
+        # weight_str = f"{weight:.2f}" if weight is not None else "N/A"
+        print(f"📊 Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s, {weight_str}")
         
         # Reset counters
         self.metrics_counter = {
@@ -291,7 +193,7 @@ class BirdFeeder:
         }
     
     def read_sensors(self):
-        weight = self.get_weight()
+        weight = self.scale.get_weight()
         motion = self.detect_motion() if MOTION_ENABLED else 0
         current_time = time.time()
 
@@ -374,7 +276,7 @@ class BirdFeeder:
             self.send_metrics()
         
         self.cap.release()
-        producer.close()
+        producer.flush(10)  # Wait up to 10s for queued messages to deliver
         
         if SCALE_ENABLED:
             if SCALE_TYPE == 'serial':
@@ -384,35 +286,6 @@ class BirdFeeder:
         
         print("Bye!")
         sys.exit()
-
-    def get_weight(self, samples=35):
-        """Get stable weight reading. Returns float (grams) or None."""
-        if not SCALE_ENABLED:
-            return None
-        
-        if SCALE_TYPE == 'serial':
-            # Just return latest reading from Pico
-            return self.scale.get_weight()
-        
-        else:  # direct HX711
-            readings = []
-            for i in range(samples):
-                reading = self.hx.get_weight(1)
-                readings.append(reading)
-                time.sleep(0.02)
-            
-            readings.sort()
-            outliers_to_remove = max(3, int(samples * 0.4))
-            trimmed = readings[outliers_to_remove:-outliers_to_remove]
-            
-            if len(trimmed) >= 3:
-                median_index = len(trimmed) // 2
-                stable_weight = trimmed[median_index]
-            else:
-                median_index = len(readings) // 2
-                stable_weight = readings[median_index]
-            
-            return stable_weight
 
     def detect_motion(self):
         """Detect motion using frame differencing. Returns int (motion pixels)."""
@@ -439,6 +312,7 @@ class BirdFeeder:
         # Cooldown check - prevent spam photos of same bird
         if (self.last_photo_time and 
             current_time - self.last_photo_time < PHOTO_COOLDOWN):
+            print("Photo cooldown")
             return False
         
         if self.cap.isOpened():
@@ -471,7 +345,7 @@ class BirdFeeder:
             'timestamp': timestamp.isoformat(),
             'location': FEEDER_LOCATION if FEEDER_LOCATION else None
         }
-        self.send_to_kafka(TOPIC_NAME, data)
+        self.send_to_kafka("bird-data", data)
     
     def send_weight_data_to_kafka(self, weight, timestamp):
         """Send weight data to Kafka topic"""
@@ -533,8 +407,9 @@ class BirdFeeder:
     def on_bird_landed(self, detection_type):
         """Called when a bird lands. detection_type: 'scale', 'motion', or 'motion-only'"""
         time.sleep(STABLE_WAIT_TIME)  # Wait a moment for stable reading
-        if detection_type == "scale" and self.get_weight() > WEIGHT_THRESHOLD:
-            weight = self.get_weight()
+        weight = self.scale.get_weight()
+        if weight is not None and weight > WEIGHT_THRESHOLD:
+            weight = self.scale.get_weight()
             timestamp = datetime.now()
             weight_str = f"{weight:.2f}g" if weight is not None else "N/A"
             print(f"Bird landed at {timestamp.isoformat()}! Weight: {weight_str} (detected by: {detection_type})")
@@ -547,11 +422,7 @@ class BirdFeeder:
         print("Bird left!")
         
         if SCALE_ENABLED:
-            if SCALE_TYPE == 'serial':
-                self.scale.tare()
-            else:
-                self.hx.tare()
-                print("Scale tared! Waiting for birds...")
+            self.scale.tare()
 
 birdFeeder = BirdFeeder()
 
