@@ -183,7 +183,7 @@ class BirdFeeder:
 
         # weight = self.scale.get_weight()
         # weight_str = f"{weight:.2f}" if weight is not None else "N/A"
-        print(f"📊 Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s, {weight_str}")
+        print(f"📊 Metrics: {metrics['messagesPerSec']:.1f} msg/s, {metrics['kbPerSec']:.2f} KB/s")
         
         # Reset counters
         self.metrics_counter = {
