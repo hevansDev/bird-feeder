@@ -92,6 +92,23 @@ For a full guide on setting up and calibrating the directly attached scale [see 
 
 **Privacy**: Only photos, timestamps, weights, and location (if provided) are shared. No personal information is collected.
 
+### Species Classification (optional)
+
+Tags each captured photo with a best-guess UK garden bird species, using the
+[secretbatcave UK-Bird-Classifier](https://github.com/secretbatcave/Uk-Bird-Classifier)
+models with an automatic crop-to-bird preprocessing step. See
+`species_classifier/README.md` for setup and accuracy notes -- this is a
+best-effort tag, not verified ground truth.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SPECIES_CLASSIFICATION_ENABLED` | `false` | Classify and tag each captured photo with a species guess |
+| `CLASSIFIER_MODEL` | `large_birds` | `large_birds` (51 species) or `uk_garden` (12 species, lighter) |
+
+When enabled, `species` and `speciesConfidence` are added to the Kafka
+`bird-data` message and the cloud-upload metadata (both null if
+classification is disabled, fails, or no bird was detected in the photo).
+
 ### Camera & Performance
 
 | Variable | Default | Description |

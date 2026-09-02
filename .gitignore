@@ -26,6 +26,9 @@ cloudflare-worker/node_modules/
 cloudflare-worker/.wrangler/
 cloudflare-worker/dist/
 
+# Species classifier model files (run species_classifier/download_models.sh)
+bird-feeder/species_classifier/models/
+
 # OS files
 .DS_Store
 Thumbs.db
