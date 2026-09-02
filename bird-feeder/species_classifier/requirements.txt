@@ -1,0 +1,7 @@
+# Species classifier deps, kept separate from the main requirements.txt so
+# this feature stays opt-in and doesn't force a numpy/protobuf downgrade on
+# people who aren't using it.
+tensorflow
+numpy<2
+protobuf==5.28.3
+opencv-python-headless

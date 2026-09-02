@@ -23,6 +23,12 @@ from scale import SerialWeightSensor, DirectWeightSensor
 
 from confluent_kafka import Producer
 
+try:
+    from species_classifier.classify import classify_photo
+except ImportError:
+    classify_photo = None
+
+
 # Load environment variables - try .env.local first, fall back to .env
 if os.path.exists('.env.local'):
     load_dotenv('.env.local', override=True)
@@ -53,6 +59,10 @@ ENABLE_CLOUD_UPLOAD = os.getenv('ENABLE_CLOUD_UPLOAD', 'false').lower() == 'true
 UPLOAD_SERVICE_URL = os.getenv('UPLOAD_SERVICE_URL', '')
 USER_ID = os.getenv('USER_ID', 'anonymous')
 FEEDER_LOCATION = os.getenv('FEEDER_LOCATION', '')
+
+# Species classification config (see species_classifier/README.md)
+SPECIES_CLASSIFICATION_ENABLED = os.getenv('SPECIES_CLASSIFICATION_ENABLED', 'false').lower() == 'true'
+
 
 # File paths
 IMAGES_DIR = os.getenv('IMAGES_DIR', './images')
@@ -329,23 +339,36 @@ class BirdFeeder:
     
                 cv2.imwrite(str(filepath), frame)
 
+                species_result = None
+                if SPECIES_CLASSIFICATION_ENABLED and classify_photo is not None:
+                    try:
+                        species_result = classify_photo(filepath)
+                        print(f"Species: {species_result['species']} ({species_result['confidence']:.0%})")
+                    except Exception as e:
+                        print(f"Species classification failed (continuing without it): {e}")
+                elif SPECIES_CLASSIFICATION_ENABLED and classify_photo is None:
+                    print("SPECIES_CLASSIFICATION_ENABLED is set but species_classifier isn't installed "
+                          "(see species_classifier/README.md)")
+
                 if ENABLE_CLOUD_UPLOAD:
-                    self.upload_to_cloud(filepath, filename, weight, detection_type, timestamp)
-                    self.send_bird_data_to_kafka(weight, detection_type, datetime.now())
+                    self.upload_to_cloud(filepath, filename, weight, detection_type, timestamp, species_result)
+                    self.send_bird_data_to_kafka(weight, detection_type, datetime.now(), species_result)
                 
                 print(f"Photo: {filename}")
                 self.last_photo_time = current_time
                 return True
         return False
     
-    def send_bird_data_to_kafka(self, weight, detection_type, timestamp):
+    def send_bird_data_to_kafka(self, weight, detection_type, timestamp, species_result=None):
         """Send bird detection data to Kafka topic"""
         data = {
             'userId': USER_ID,
             'weight': float(weight) if weight is not None else None,
             'detectionType': detection_type,
             'timestamp': timestamp.isoformat(),
-            'location': FEEDER_LOCATION if FEEDER_LOCATION else None
+            'location': FEEDER_LOCATION if FEEDER_LOCATION else None,
+            'species': species_result['species'] if species_result else None,
+            'speciesConfidence': species_result['confidence'] if species_result else None
         }
         self.send_to_kafka("bird-data", data)
     
@@ -369,7 +392,7 @@ class BirdFeeder:
         }
         self.send_to_kafka("motion", data)
 
-    def upload_to_cloud(self, filepath, filename, weight, detection_type, timestamp):
+    def upload_to_cloud(self, filepath, filename, weight, detection_type, timestamp, species_result=None):
         """Upload photo to Cloudflare Images"""
         try:
             metadata = {
@@ -377,7 +400,9 @@ class BirdFeeder:
                 'detectionType': detection_type,
                 'timestamp': timestamp,
                 'location': FEEDER_LOCATION if FEEDER_LOCATION else None,
-                'filename': filename
+                'filename': filename,
+                'species': species_result['species'] if species_result else None,
+                'speciesConfidence': species_result['confidence'] if species_result else None
             }
             
             with open(filepath, 'rb') as f:
